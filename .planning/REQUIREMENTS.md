@@ -110,8 +110,71 @@
 
 ## Traceability
 
-(To be populated by gsd-roadmapper.)
+Coverage: 49/49 v1 requirements mapped to exactly one phase. No orphans.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| WS-01 | Phase 1 | Pending |
+| WS-02 | Phase 1 | Pending |
+| WS-03 | Phase 1 | Pending |
+| WS-04 | Phase 1 | Pending |
+| WS-05 | Phase 1 | Pending |
+| HARN-01 | Phase 1 | Pending |
+| HARN-02 | Phase 1 | Pending |
+| HARN-03 | Phase 1 | Pending |
+| HARN-04 | Phase 1 | Pending |
+| HARN-05 | Phase 1 | Pending |
+| HARN-06 | Phase 1 | Pending |
+| HARN-07 | Phase 1 | Pending |
+| HARN-08 | Phase 1 | Pending |
+| SCEN-01 | Phase 1 | Pending |
+| SCEN-02 | Phase 2 | Pending |
+| SCEN-03 | Phase 2 | Pending |
+| SCEN-04 | Phase 2 | Pending |
+| SCEN-05 | Phase 2 | Pending |
+| SCEN-06 | Phase 2 | Pending |
+| SCEN-07 | Phase 2 | Pending |
+| SCEN-08 | Phase 2 | Pending |
+| SCEN-09 | Phase 2 | Pending |
+| SCEN-10 | Phase 2 | Pending |
+| SCEN-11 | Phase 2 | Pending |
+| DOCK-01 | Phase 3 | Pending |
+| DOCK-02 | Phase 3 | Pending |
+| DOCK-03 | Phase 3 | Pending |
+| DOCK-04 | Phase 3 | Pending |
+| DOCK-05 | Phase 3 | Pending |
+| DOCK-06 | Phase 3 | Pending |
+| DOCK-07 | Phase 3 | Pending |
+| DOCK-08 | Phase 3 | Pending |
+| DOCK-09 | Phase 3 | Pending |
+| ORCH-01 | Phase 3 | Pending |
+| ORCH-02 | Phase 3 | Pending |
+| ORCH-03 | Phase 4 | Pending |
+| AGG-01 | Phase 4 | Pending |
+| AGG-02 | Phase 4 | Pending |
+| AGG-03 | Phase 4 | Pending |
+| AGG-04 | Phase 4 | Pending |
+| AGG-05 | Phase 4 | Pending |
+| AGG-06 | Phase 4 | Pending |
+| AGG-07 | Phase 4 | Pending |
+| AGG-08 | Phase 4 | Pending |
+| ORCH-04 | Phase 5 | Pending |
+| ORCH-05 | Phase 5 | Pending |
+| REPR-01 | Phase 5 | Pending |
+| REPR-02 | Phase 1 | Pending |
+| REPR-03 | Phase 5 | Pending |
+
+### Coverage by Phase
+
+| Phase | Requirement Count | Requirements |
+|-------|-------------------|--------------|
+| Phase 1 — Foundation MVP Slice | 15 | WS-01..05, HARN-01..08, SCEN-01, REPR-02 |
+| Phase 2 — Scenario Fan-Out | 10 | SCEN-02..11 |
+| Phase 3 — Docker Matrix & Local Orchestration | 11 | DOCK-01..09, ORCH-01, ORCH-02 |
+| Phase 4 — Aggregator & Dashboard | 9 | AGG-01..08, ORCH-03 |
+| Phase 5 — CI, Image-Size Gate & Public Polish | 4 | ORCH-04, ORCH-05, REPR-01, REPR-03 |
+| **Total** | **49** | — |
 
 ---
 *Requirements defined: 2026-05-17*
-*Last updated: 2026-05-17 after initialization*
+*Last updated: 2026-05-17 after roadmap creation*
