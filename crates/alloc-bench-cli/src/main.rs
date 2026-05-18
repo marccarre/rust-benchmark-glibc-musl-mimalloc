@@ -41,6 +41,116 @@ enum Cmd {
         #[arg(long)]
         output: Option<String>,
     },
+    /// SPMC channel: 1 producer, N cloned receivers race for messages
+    Spmc {
+        #[arg(long, default_value_t = 1)]
+        producers: usize,
+        #[arg(long, default_value_t = 4)]
+        consumers: usize,
+        #[arg(long, default_value_t = 1024)]
+        capacity: usize,
+        #[arg(long, default_value_t = 1000)]
+        objects_per_tick: u64,
+        #[arg(long, default_value = "uniform")]
+        payload_dist: String,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "60s")]
+        duration: String,
+        #[arg(long, default_value_t = 0xDEADBEEF)]
+        seed: u64,
+        #[arg(long)]
+        output: Option<String>,
+    },
+    /// MPSC channel: N cloned senders, 1 receiver
+    Mpsc {
+        #[arg(long, default_value_t = 4)]
+        producers: usize,
+        #[arg(long, default_value_t = 1)]
+        consumers: usize,
+        #[arg(long, default_value_t = 1024)]
+        capacity: usize,
+        #[arg(long, default_value_t = 1000)]
+        objects_per_tick: u64,
+        #[arg(long, default_value = "uniform")]
+        payload_dist: String,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "60s")]
+        duration: String,
+        #[arg(long, default_value_t = 0xDEADBEEF)]
+        seed: u64,
+        #[arg(long)]
+        output: Option<String>,
+    },
+    /// MPMC channel: N senders × M receivers, both sides cloned
+    Mpmc {
+        #[arg(long, default_value_t = 4)]
+        producers: usize,
+        #[arg(long, default_value_t = 4)]
+        consumers: usize,
+        #[arg(long, default_value_t = 1024)]
+        capacity: usize,
+        #[arg(long, default_value_t = 1000)]
+        objects_per_tick: u64,
+        #[arg(long, default_value = "uniform")]
+        payload_dist: String,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "60s")]
+        duration: String,
+        #[arg(long, default_value_t = 0xDEADBEEF)]
+        seed: u64,
+        #[arg(long)]
+        output: Option<String>,
+    },
+    /// Lock-contention: high-thread-count tight alloc/free loop
+    Contention {
+        #[arg(long, default_value_t = 64)]
+        threads: usize,
+        #[arg(long, default_value_t = 64)]
+        alloc_size: usize,
+        #[arg(long, default_value_t = 10_000)]
+        iters_per_tick: u64,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "60s")]
+        duration: String,
+        #[arg(long, default_value_t = 0xDEADBEEF)]
+        seed: u64,
+        #[arg(long)]
+        output: Option<String>,
+    },
+    /// Memory-bound: linked-list (alloc-heavy) or strided-array (RSS+bandwidth)
+    MemBound {
+        #[arg(long, default_value = "linked-list")]
+        mode: String,
+        /// Working-set size in megabytes (--size MB).
+        #[arg(long, default_value_t = 4)]
+        size: usize,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "60s")]
+        duration: String,
+        #[arg(long, default_value_t = 0xDEADBEEF)]
+        seed: u64,
+        #[arg(long)]
+        output: Option<String>,
+    },
+    /// Realloc-storm: Vec growth from capacity 0 to --target-size MB per tick
+    ReallocStorm {
+        /// Target Vec length in megabytes (--target-size MB).
+        #[arg(long, default_value_t = 64)]
+        target_size: usize,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "60s")]
+        duration: String,
+        #[arg(long, default_value_t = 0xDEADBEEF)]
+        seed: u64,
+        #[arg(long)]
+        output: Option<String>,
+    },
 }
 
 fn num_cpus_default() -> usize {
@@ -109,6 +219,119 @@ fn main() -> Result<()> {
                 seed,
                 output.as_deref(),
             )
+        }
+        Some(Cmd::Spmc {
+            producers,
+            consumers,
+            capacity,
+            objects_per_tick,
+            payload_dist,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => {
+            print_version_banner();
+            run::run_spmc(
+                producers,
+                consumers,
+                capacity,
+                objects_per_tick,
+                &payload_dist,
+                &warmup,
+                &duration,
+                seed,
+                output.as_deref(),
+            )
+        }
+        Some(Cmd::Mpsc {
+            producers,
+            consumers,
+            capacity,
+            objects_per_tick,
+            payload_dist,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => {
+            print_version_banner();
+            run::run_mpsc(
+                producers,
+                consumers,
+                capacity,
+                objects_per_tick,
+                &payload_dist,
+                &warmup,
+                &duration,
+                seed,
+                output.as_deref(),
+            )
+        }
+        Some(Cmd::Mpmc {
+            producers,
+            consumers,
+            capacity,
+            objects_per_tick,
+            payload_dist,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => {
+            print_version_banner();
+            run::run_mpmc(
+                producers,
+                consumers,
+                capacity,
+                objects_per_tick,
+                &payload_dist,
+                &warmup,
+                &duration,
+                seed,
+                output.as_deref(),
+            )
+        }
+        Some(Cmd::Contention {
+            threads,
+            alloc_size,
+            iters_per_tick,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => {
+            print_version_banner();
+            run::run_contention(
+                threads,
+                alloc_size,
+                iters_per_tick,
+                &warmup,
+                &duration,
+                seed,
+                output.as_deref(),
+            )
+        }
+        Some(Cmd::MemBound {
+            mode,
+            size,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => {
+            print_version_banner();
+            run::run_mem_bound(&mode, size, &warmup, &duration, seed, output.as_deref())
+        }
+        Some(Cmd::ReallocStorm {
+            target_size,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => {
+            print_version_banner();
+            run::run_realloc_storm(target_size, &warmup, &duration, seed, output.as_deref())
         }
     }
 }

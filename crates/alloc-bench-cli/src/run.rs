@@ -2,9 +2,13 @@ use std::time::Duration;
 
 use alloc_bench_core::metrics::env::read_env;
 use alloc_bench_core::output::{Build, Run, ScenarioInfo};
-use alloc_bench_core::scenarios::{Multithread, MultithreadConfig, SizeDist};
+use alloc_bench_core::scenarios::{
+    ChannelConfig, Contention, ContentionConfig, MemBound, MemBoundConfig, MemBoundMode, Mpmc,
+    Mpsc, Multithread, MultithreadConfig, PayloadDist, ReallocStorm, ReallocStormConfig, SizeDist,
+    Spmc,
+};
 use alloc_bench_core::{run, HarnessConfig, SCHEMA_VERSION};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 
 use crate::{allocator, build_info};
 
@@ -47,41 +51,18 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn run_multithread(
-    threads: usize,
-    objects: usize,
-    size_dist: &str,
-    size_min: usize,
-    size_max: usize,
-    warmup: &str,
-    duration: &str,
-    seed: u64,
+/// Drive the harness for a single scenario, then assemble + emit the Run
+/// record. Centralised so each `run_<name>` function below is just argument
+/// parsing + scenario construction + this call. Avoids drift between
+/// scenarios in how Build/Env/Run records are built.
+fn drive_and_emit<S: alloc_bench_core::Scenario>(
+    scenario: &mut S,
+    name: &str,
+    unit: Option<String>,
+    cfg: &HarnessConfig,
     output: Option<&str>,
 ) -> Result<()> {
-    let warmup = parse_duration(warmup)?;
-    let measure = parse_duration(duration)?;
-    let dist: SizeDist = size_dist.parse()?;
-
-    // WR-02 / WR-03: validate inputs up-front so the worker hot path is
-    // panic-free.
-    let cfg = MultithreadConfig {
-        threads,
-        objects,
-        size_dist: dist,
-        size_min,
-        size_max,
-        seed,
-    }
-    .validated()?;
-    let mut scenario = Multithread::new(cfg);
-
-    let cfg = HarnessConfig {
-        warmup,
-        measure,
-        seed,
-    };
-    let outcome = run(&mut scenario, &cfg, allocator::stats)?;
+    let outcome = run(scenario, cfg, allocator::stats)?;
 
     let env = read_env()?;
     let sha = build_info::GIT_SHA;
@@ -89,8 +70,11 @@ pub fn run_multithread(
     let run_id = format!("{}-{sha8}", chrono::Utc::now().to_rfc3339());
 
     let scenario_info = ScenarioInfo {
-        name: "multithread".to_string(),
-        config: alloc_bench_core::Scenario::config_json(&scenario),
+        name: name.to_string(),
+        config: alloc_bench_core::Scenario::config_json(scenario),
+        // Phase-2 additive schema field. `None` is skipped on serialize so
+        // existing Phase-1 JSON shapes stay byte-identical.
+        unit,
     };
 
     let build = Build {
@@ -123,6 +107,270 @@ pub fn run_multithread(
         None => println!("{json}"),
     }
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_multithread(
+    threads: usize,
+    objects: usize,
+    size_dist: &str,
+    size_min: usize,
+    size_max: usize,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+    let dist: SizeDist = size_dist.parse()?;
+
+    // WR-02 / WR-03: validate inputs up-front so the worker hot path is
+    // panic-free.
+    let cfg = MultithreadConfig {
+        threads,
+        objects,
+        size_dist: dist,
+        size_min,
+        size_max,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = Multithread::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    drive_and_emit(&mut scenario, "multithread", None, &hcfg, output)
+}
+
+// =============================================================================
+// Phase-2 channel scenarios (SCEN-03/04/05)
+// =============================================================================
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_spmc(
+    producers: usize,
+    consumers: usize,
+    capacity: usize,
+    objects_per_tick: u64,
+    payload_dist: &str,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    // Topology constraint: SPMC = "Single Producer, Multi Consumer". The
+    // shared ChannelConfig is permissive enough to model all three
+    // topologies, so we enforce the SP invariant here at the CLI surface.
+    ensure!(
+        producers == 1,
+        "SPMC requires --producers 1 (got {producers})"
+    );
+
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+    let dist: PayloadDist = payload_dist.parse()?;
+
+    let cfg = ChannelConfig {
+        producers,
+        consumers,
+        capacity,
+        objects_per_tick,
+        payload_dist: dist,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = Spmc::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    drive_and_emit(
+        &mut scenario,
+        "spmc",
+        Some("iters_per_s".to_string()),
+        &hcfg,
+        output,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_mpsc(
+    producers: usize,
+    consumers: usize,
+    capacity: usize,
+    objects_per_tick: u64,
+    payload_dist: &str,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    ensure!(
+        consumers == 1,
+        "MPSC requires --consumers 1 (got {consumers})"
+    );
+
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+    let dist: PayloadDist = payload_dist.parse()?;
+
+    let cfg = ChannelConfig {
+        producers,
+        consumers,
+        capacity,
+        objects_per_tick,
+        payload_dist: dist,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = Mpsc::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    drive_and_emit(
+        &mut scenario,
+        "mpsc",
+        Some("iters_per_s".to_string()),
+        &hcfg,
+        output,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_mpmc(
+    producers: usize,
+    consumers: usize,
+    capacity: usize,
+    objects_per_tick: u64,
+    payload_dist: &str,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+    let dist: PayloadDist = payload_dist.parse()?;
+
+    let cfg = ChannelConfig {
+        producers,
+        consumers,
+        capacity,
+        objects_per_tick,
+        payload_dist: dist,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = Mpmc::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    drive_and_emit(
+        &mut scenario,
+        "mpmc",
+        Some("iters_per_s".to_string()),
+        &hcfg,
+        output,
+    )
+}
+
+// =============================================================================
+// Phase-2 contention / mem-bound / realloc-storm
+// =============================================================================
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_contention(
+    threads: usize,
+    alloc_size: usize,
+    iters_per_tick: u64,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+
+    let cfg = ContentionConfig {
+        threads,
+        alloc_size,
+        iters_per_tick,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = Contention::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    drive_and_emit(&mut scenario, "contention", None, &hcfg, output)
+}
+
+pub fn run_mem_bound(
+    mode: &str,
+    size_mb: usize,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+    let mode: MemBoundMode = mode.parse()?;
+
+    let cfg = MemBoundConfig {
+        mode,
+        size_mb,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = MemBound::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    drive_and_emit(&mut scenario, "mem-bound", None, &hcfg, output)
+}
+
+pub fn run_realloc_storm(
+    target_size_mb: usize,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+
+    let cfg = ReallocStormConfig {
+        target_size_mb,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = ReallocStorm::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    drive_and_emit(&mut scenario, "realloc-storm", None, &hcfg, output)
 }
 
 #[cfg(test)]
