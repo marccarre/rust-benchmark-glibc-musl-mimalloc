@@ -64,10 +64,37 @@ pub fn stats() -> serde_json::Value {
     }
     #[cfg(feature = "alloc-mimalloc")]
     {
-        // mimalloc 0.1.x doesn't expose mi_stats_get bindings directly. Phase 1
-        // emits the kind discriminator only; Phase 2/3 may extend with
-        // mi_stats_print capture if needed.
-        return serde_json::json!({ "kind": "mimalloc" });
+        let mut elapsed_ms: usize = 0;
+        let mut user_ms: usize = 0;
+        let mut system_ms: usize = 0;
+        let mut current_rss: usize = 0;
+        let mut peak_rss: usize = 0;
+        let mut current_commit: usize = 0;
+        let mut peak_commit: usize = 0;
+        let mut page_faults: usize = 0;
+        unsafe {
+            libmimalloc_sys::mi_process_info(
+                &mut elapsed_ms,
+                &mut user_ms,
+                &mut system_ms,
+                &mut current_rss,
+                &mut peak_rss,
+                &mut current_commit,
+                &mut peak_commit,
+                &mut page_faults,
+            );
+        }
+        return serde_json::json!({
+            "kind":           "mimalloc",
+            "elapsed_ms":     elapsed_ms,
+            "user_ms":        user_ms,
+            "system_ms":      system_ms,
+            "current_rss":    current_rss,
+            "peak_rss":       peak_rss,
+            "current_commit": current_commit,
+            "peak_commit":    peak_commit,
+            "page_faults":    page_faults,
+        });
     }
     serde_json::json!({ "kind": "system" })
 }
