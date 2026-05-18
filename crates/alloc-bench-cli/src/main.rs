@@ -1,5 +1,6 @@
 mod allocator;
 mod build_info;
+mod run;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -73,9 +74,26 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         None | Some(Cmd::Version) => Ok(()),
-        Some(Cmd::Multithread { .. }) => {
-            eprintln!("error: `multithread` subcommand is implemented in Plan 02");
-            std::process::exit(2);
-        }
+        Some(Cmd::Multithread {
+            threads,
+            objects,
+            size_dist,
+            size_min,
+            size_max,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => run::run_multithread(
+            threads,
+            objects,
+            &size_dist,
+            size_min,
+            size_max,
+            &warmup,
+            &duration,
+            seed,
+            output.as_deref(),
+        ),
     }
 }
