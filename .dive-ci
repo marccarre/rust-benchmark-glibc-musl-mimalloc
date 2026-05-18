@@ -1,0 +1,14 @@
+# .dive-ci — image-efficiency thresholds for `dive --ci alloc-bench:<alloc>-<env>`.
+#
+# Source: dive 0.13.1 README — github.com/wagoodman/dive (verified 2026-05-19).
+# Thresholds locked by 03-CONTEXT.md D-21:
+#   lowestEfficiency:         0.95   — layer-stack efficiency (1.0 = no waste).
+#   highestUserWastedPercent: 0.05   — max 5% of image-size occupied by waste.
+#   highestWastedBytes:       50MB   — absolute cap on wasted bytes.
+#
+# Run via: `dive --ci alloc-bench:<alloc>-<env> --ci-config .dive-ci`
+# Returns 0 on pass, 1 on any threshold violation (Phase 5 wires to GHA).
+rules:
+  lowestEfficiency: 0.95
+  highestUserWastedPercent: 0.05
+  highestWastedBytes: 50MB
