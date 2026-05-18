@@ -150,9 +150,7 @@ fn make_user_profile(rng: &mut SmallRng) -> UserProfile {
 /// Echo handler — tiny mutation defeats `echo == identity` DCE. The handler
 /// also exercises the server-side allocator: deserialise body → mutate →
 /// reserialise into the response body.
-async fn echo_handler(
-    axum::Json(p): axum::Json<UserProfile>,
-) -> axum::Json<UserProfile> {
+async fn echo_handler(axum::Json(p): axum::Json<UserProfile>) -> axum::Json<UserProfile> {
     let mut p = p;
     p.id = p.id.wrapping_add(1);
     axum::Json(p)
@@ -207,8 +205,7 @@ impl Scenario for Web {
             let addr = listener.local_addr()?;
             // We need the listener to outlive this block_on, so move it
             // into the spawned server task. Capture addr first.
-            let app =
-                axum::Router::new().route("/echo", axum::routing::post(echo_handler));
+            let app = axum::Router::new().route("/echo", axum::routing::post(echo_handler));
             // Spawn the server fire-and-forget on the runtime so the bind
             // happens here-and-now and the serve loop runs in the background
             // for the rest of the scenario's life.
@@ -278,9 +275,7 @@ impl Scenario for Web {
                 // fails loudly instead of recording bogus throughput.
                 match h.await {
                     Ok(resp) => out.push(resp),
-                    Err(e) if e.is_panic() => {
-                        std::panic::resume_unwind(e.into_panic())
-                    }
+                    Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
                     Err(e) => panic!("tokio task failed: {e}"),
                 }
             }

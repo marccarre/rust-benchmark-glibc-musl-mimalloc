@@ -83,10 +83,7 @@ fn parallel_merge_sort<T: Ord + Send + Copy>(slice: &mut [T]) {
     let total_len = slice.len();
     let mid = total_len / 2;
     let (left, right) = slice.split_at_mut(mid);
-    rayon::join(
-        || parallel_merge_sort(left),
-        || parallel_merge_sort(right),
-    );
+    rayon::join(|| parallel_merge_sort(left), || parallel_merge_sort(right));
 
     // MERGE STEP — fresh allocation per merge node, intentional.
     let mut merged: Vec<T> = Vec::with_capacity(total_len);
@@ -144,11 +141,7 @@ impl Scenario for CpuBound {
         // Clone the input each tick so we sort fresh data; the clone alone
         // is one large allocation that joins the per-merge allocations as
         // workload for the allocator.
-        let mut data = self
-            .input
-            .as_ref()
-            .expect("setup() not called")
-            .clone();
+        let mut data = self.input.as_ref().expect("setup() not called").clone();
         let pool = self.pool.as_ref().expect("setup() not called");
         // pool.install ensures the rayon::join calls inside the sort use
         // OUR scoped pool, not the global one.
