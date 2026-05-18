@@ -145,7 +145,10 @@ mod tests {
     fn parse_duration_ms_takes_precedence_over_m() {
         assert_eq!(parse_duration("5ms").unwrap(), Duration::from_millis(5));
         assert_eq!(parse_duration("5m").unwrap(), Duration::from_secs(300));
-        assert_ne!(parse_duration("5ms").unwrap(), parse_duration("5m").unwrap());
+        assert_ne!(
+            parse_duration("5ms").unwrap(),
+            parse_duration("5m").unwrap()
+        );
     }
 
     #[test]

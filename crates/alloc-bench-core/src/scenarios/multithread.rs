@@ -43,15 +43,27 @@ impl MultithreadConfig {
     /// - `size_min <= size_max` prevents `Rng::gen_range` panics.
     /// - `threads >= 1` and `objects >= 1` keep the workload non-degenerate.
     pub fn validated(self) -> anyhow::Result<Self> {
-        anyhow::ensure!(self.size_min >= 1, "size_min must be >= 1 (got {})", self.size_min);
+        anyhow::ensure!(
+            self.size_min >= 1,
+            "size_min must be >= 1 (got {})",
+            self.size_min
+        );
         anyhow::ensure!(
             self.size_min <= self.size_max,
             "size_min ({}) must be <= size_max ({})",
             self.size_min,
             self.size_max
         );
-        anyhow::ensure!(self.threads >= 1, "threads must be >= 1 (got {})", self.threads);
-        anyhow::ensure!(self.objects >= 1, "objects must be >= 1 (got {})", self.objects);
+        anyhow::ensure!(
+            self.threads >= 1,
+            "threads must be >= 1 (got {})",
+            self.threads
+        );
+        anyhow::ensure!(
+            self.objects >= 1,
+            "objects must be >= 1 (got {})",
+            self.objects
+        );
         Ok(self)
     }
 }
