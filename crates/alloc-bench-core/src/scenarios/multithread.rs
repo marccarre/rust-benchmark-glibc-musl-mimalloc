@@ -50,8 +50,10 @@ fn sample_size(rng: &mut SmallRng, dist: SizeDist, min: usize, max: usize) -> us
     match dist {
         SizeDist::Uniform => rng.gen_range(min..=max),
         SizeDist::Bimodal => {
+            // CR-01: Respect [min, max] bounds. Any sane-minimum guard belongs in
+            // MultithreadConfig::validated, not silently rewritten in the hot path.
             if rng.gen::<f32>() < 0.9 {
-                min.max(16)
+                min
             } else {
                 max
             }
