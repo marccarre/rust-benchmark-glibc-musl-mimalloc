@@ -44,7 +44,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. User runs each of `spmc`, `mpsc`, `mpmc`, `cpu-bound`, `mem-bound` (with `--mode linked-list` and `--mode strided-array`), `contention`, `fragmentation-soak`, and `realloc-storm` with their documented CLI flags and each emits a schema-valid results.json with non-trivial throughput and percentile data.
   3. User runs `alloc-bench-cli run-all --output results/run.json` and a single combined results.json contains one record per scenario in execution order; total runtime is approximately the sum of per-scenario durations.
   4. User builds `cargo build --release --emit=llvm-ir` for each scenario and an automated grep verifies the allocation calls survive (no DCE), and a sanity test confirms RSS grows during a no-op-looking scenario (black_box discipline holds).
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — 6 simple scenarios (channels, contention, mem-bound, realloc-storm) + crossbeam dep + ScenarioInfo.unit additive field
+- [ ] 02-02-PLAN.md — 3 heavy scenarios (web with axum/tokio/reqwest, cpu-bound with rayon, fragmentation-soak with state-across-ticks)
+- [ ] 02-03-PLAN.md — run-all registry (Box<dyn Scenario> + panic::catch_unwind) + DCE check (just-recipe + scripts/dce_check.sh) + integration test
 
 ### Phase 3: Docker Matrix & Local Orchestration
 **Goal**: User can build any of the six allocator-runtime Docker images and run any cell of the matrix locally via `just`, with NUMA pinning and cgroup memory limits baked into the recipe so that mimalloc segment pre-allocation never OOM-kills.
@@ -93,7 +98,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation MVP Slice | 2/2 | Complete   | 2026-05-18 |
-| 2. Scenario Fan-Out | 0/TBD | Not started | - |
+| 2. Scenario Fan-Out | 0/3 | Not started | - |
 | 3. Docker Matrix & Local Orchestration | 0/TBD | Not started | - |
 | 4. Aggregator & Dashboard | 0/TBD | Not started | - |
 | 5. CI, Image-Size Gate & Public Polish | 0/TBD | Not started | - |
