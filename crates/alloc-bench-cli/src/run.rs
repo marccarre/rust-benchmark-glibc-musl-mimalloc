@@ -513,12 +513,11 @@ pub fn run_fragmentation_soak(
 // Phase-2 Wave-3 — run-all (SCEN-11)
 // =============================================================================
 
-/// Builder closure that constructs a boxed scenario lazily. We use `FnOnce`
-/// + `Box<dyn ...>` so the registry can capture `seed` by move and run-all
-/// only pays the construction cost for scenarios it actually invokes (and
-/// only once).
-type ScenarioBuilder =
-    Box<dyn FnOnce() -> Result<Box<dyn alloc_bench_core::Scenario>> + 'static>;
+/// Builder closure that constructs a boxed scenario lazily. The closure
+/// type is `FnOnce` returning `Box<dyn Scenario>` so the registry can
+/// capture `seed` by move and run-all only pays the construction cost
+/// for scenarios it actually invokes (and only once per invocation).
+type ScenarioBuilder = Box<dyn FnOnce() -> Result<Box<dyn alloc_bench_core::Scenario>> + 'static>;
 
 /// Returns the canonical 10-scenario registry used by `run-all`. Each entry
 /// is `(name, optional unit label, builder)`. Order is the documented
@@ -532,10 +531,10 @@ type ScenarioBuilder =
 /// "small, fast — finishes in ~60s".
 fn default_scenarios(seed: u64) -> Vec<(&'static str, Option<String>, ScenarioBuilder)> {
     use alloc_bench_core::scenarios::{
-        ChannelConfig, Contention, ContentionConfig, CpuBound, CpuBoundConfig,
-        FragmentationConfig, FragmentationSoak, MemBound, MemBoundConfig, MemBoundMode, Mpmc,
-        Mpsc, Multithread, MultithreadConfig, PayloadDist, ReallocStorm, ReallocStormConfig,
-        SizeDist, Spmc, Web, WebConfig,
+        ChannelConfig, Contention, ContentionConfig, CpuBound, CpuBoundConfig, FragmentationConfig,
+        FragmentationSoak, MemBound, MemBoundConfig, MemBoundMode, Mpmc, Mpsc, Multithread,
+        MultithreadConfig, PayloadDist, ReallocStorm, ReallocStormConfig, SizeDist, Spmc, Web,
+        WebConfig,
     };
 
     vec![

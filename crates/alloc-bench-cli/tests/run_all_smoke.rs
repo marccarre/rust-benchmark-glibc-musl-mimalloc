@@ -43,7 +43,8 @@ fn run_all_emits_one_record_per_scenario() {
     let out: PathBuf = dir.path().join("all.json");
 
     let mut cmd = Command::cargo_bin("alloc-bench-cli").expect("cargo bin");
-    cmd.args(["run-all", "--seed", "12345", "--output"]).arg(&out);
+    cmd.args(["run-all", "--seed", "12345", "--output"])
+        .arg(&out);
     // run-all default config: 10 scenarios × (1s warmup + 5s measure) ≈ 60s,
     // plus ~ms-scale fixed overhead per scenario. assert_cmd's default
     // timeout is none; CI budgets typically allow 3-5min for a single
