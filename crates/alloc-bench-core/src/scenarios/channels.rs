@@ -569,9 +569,7 @@ mod tests {
     /// construction.
     #[test]
     fn validated_for_spmc_rejects_multi_producer() {
-        let err = cfg(2, 4, 16)
-            .validated_for(ChannelKind::Spmc)
-            .unwrap_err();
+        let err = cfg(2, 4, 16).validated_for(ChannelKind::Spmc).unwrap_err();
         assert!(
             err.to_string().contains("SPMC requires producers == 1"),
             "unexpected error: {err}"
@@ -585,9 +583,7 @@ mod tests {
 
     #[test]
     fn validated_for_mpsc_rejects_multi_consumer() {
-        let err = cfg(4, 2, 16)
-            .validated_for(ChannelKind::Mpsc)
-            .unwrap_err();
+        let err = cfg(4, 2, 16).validated_for(ChannelKind::Mpsc).unwrap_err();
         assert!(
             err.to_string().contains("MPSC requires consumers == 1"),
             "unexpected error: {err}"

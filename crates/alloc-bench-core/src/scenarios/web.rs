@@ -228,8 +228,7 @@ impl Scenario for Web {
                     .context("web scenario: read listener local_addr")?;
                 // We need the listener to outlive this block_on, so move it
                 // into the spawned server task. Capture addr first.
-                let app =
-                    axum::Router::new().route("/echo", axum::routing::post(echo_handler));
+                let app = axum::Router::new().route("/echo", axum::routing::post(echo_handler));
                 // Spawn the server fire-and-forget on the runtime so the bind
                 // happens here-and-now and the serve loop runs in the background
                 // for the rest of the scenario's life.
