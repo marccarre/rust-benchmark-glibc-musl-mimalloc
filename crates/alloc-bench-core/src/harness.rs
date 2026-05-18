@@ -52,7 +52,14 @@ pub fn run<S: Scenario, F: Fn() -> serde_json::Value>(
     let warmup_actual_s = cfg.warmup.as_secs_f64();
 
     // Measurement phase
-    let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000_000_000, 3)?;
+    // WR-04: HDR ceiling. Per-tick fork/join can plausibly exceed 60s on
+    // saturated CI runners or heavy `--threads --objects` configurations;
+    // 5min head-room keeps us recording even when slow, and we still
+    // saturate (clip) any sample above HIST_MAX_NS rather than aborting
+    // the run mid-measurement (`hist.record(...)?` would otherwise return
+    // an error on out-of-range values).
+    const HIST_MAX_NS: u64 = 300_000_000_000;
+    let mut hist = Histogram::<u64>::new_with_bounds(1, HIST_MAX_NS, 3)?;
     let mut rss_samples: Vec<RssGrowthSample> = Vec::new();
     let measure_start = Instant::now();
     let measure_end = measure_start + cfg.measure;
@@ -63,7 +70,10 @@ pub fn run<S: Scenario, F: Fn() -> serde_json::Value>(
         let t0 = Instant::now();
         std::hint::black_box(scenario.tick());
         let elapsed_ns = t0.elapsed().as_nanos() as u64;
-        hist.record(elapsed_ns.max(1))?;
+        // WR-04: saturating clip. We prefer a slightly-truncated tail to a
+        // mid-run abort that loses everything collected so far.
+        let clipped = elapsed_ns.clamp(1, HIST_MAX_NS);
+        hist.record(clipped)?;
 
         if last_rss_t.elapsed() >= Duration::from_secs(1) {
             let rss_kb = read_rss_kb().unwrap_or(0);
