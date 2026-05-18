@@ -3,7 +3,13 @@ use crate::output::Rusage;
 pub fn read_rusage() -> anyhow::Result<Rusage> {
     let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
     let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut ru) };
-    anyhow::ensure!(ret == 0, "getrusage failed");
+    // WR-06: surface errno on failure so sandbox/seccomp restrictions are
+    // diagnosable instead of producing a generic "getrusage failed".
+    anyhow::ensure!(
+        ret == 0,
+        "getrusage failed: {}",
+        std::io::Error::last_os_error()
+    );
 
     let peak_rss_kb = {
         #[cfg(target_os = "macos")]
