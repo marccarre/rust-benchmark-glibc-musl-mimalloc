@@ -179,13 +179,21 @@ mod tests {
                 s.long_lived_len()
             );
         }
-        // After many ticks we should be saturated at the cap (probabilistically;
-        // with allocs_per_tick=10_000 the chance of fewer than 100 long-lived
-        // ever forming across 50 ticks is negligible).
-        assert!(
-            s.long_lived_len() == 100,
-            "expected long_lived to reach cap of 100, got {}",
-            s.long_lived_len()
+        // WR-11 (Phase-2 review): after many ticks we expect the cap to
+        // be saturated. The probability of fewer than 100 long-lived
+        // pushes across 50 ticks of allocs_per_tick=10_000 is
+        // ≈ (0.9)^(50 * 10_000) ≈ 10^-22906 — astronomically small for
+        // a well-formed PRNG. If this assertion ever flakes, SmallRng
+        // produced a degenerate sequence for seed=1 (rotate the seed
+        // in `cfg(allocs_per_tick, long_lived_cap)` before assuming the
+        // cap-enforcement logic regressed). assert_eq! gives a clearer
+        // diff than `assert!(... == ...)` on failure.
+        assert_eq!(
+            s.long_lived_len(),
+            100,
+            "expected long_lived to reach cap of 100; if not, SmallRng \
+             sequence for seed=1 degenerated — try a different seed before \
+             assuming the eviction logic regressed"
         );
     }
 
