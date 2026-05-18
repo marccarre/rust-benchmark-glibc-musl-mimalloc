@@ -62,7 +62,15 @@ Plans:
   3. User runs `just bench-all` and the recipe builds and runs the full meaningful (allocator × env) cross-product (excluding nonsensical combos like mallocng-on-debian), emitting one results.json per cell into `results/`.
   4. User runs `just bench-host` on the macOS host and gets a `results/host-system.json` recording libmalloc as the 7th-environment baseline with a clear `docker_image: null` env marker.
   5. User runs `dive --ci alloc-bench:jemalloc-alpine` and the wasted-bytes / efficiency thresholds pass for every image in the matrix.
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — glibc Dockerfiles (debian-slim, distroless-cc, wolfi) + .dockerignore + .dive-ci
+- [ ] 03-02-PLAN.md — musl Dockerfiles (alpine, distroless-static, scratch)
+- [ ] 03-03-PLAN.md — Justfile recipes (build/run/bench-cell/bench-all/bench-all-smoke/bench-host/dive-check/dive-check-all/clean-images)
+- [ ] 03-04-PLAN.md — Anchor smoke + full matrix + bench-host + dive-check-all
+- [ ] 03-05-PLAN.md — STATE.md / ROADMAP.md / CLAUDE.md closure
+
 
 ### Phase 4: Aggregator & Dashboard
 **Goal**: User can point the aggregator at a directory of results.json files and get a self-contained `report/index.html` Plotly dashboard plus a `REPORT.md` with comparison tables, Mermaid allocator architecture diagrams, and a recommendations section.
@@ -99,6 +107,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Foundation MVP Slice | 2/2 | Complete   | 2026-05-18 |
 | 2. Scenario Fan-Out | 3/3 | Complete   | 2026-05-18 |
-| 3. Docker Matrix & Local Orchestration | 0/TBD | Not started | - |
+| 3. Docker Matrix & Local Orchestration | 0/5 | Not started | - |
 | 4. Aggregator & Dashboard | 0/TBD | Not started | - |
 | 5. CI, Image-Size Gate & Public Polish | 0/TBD | Not started | - |
