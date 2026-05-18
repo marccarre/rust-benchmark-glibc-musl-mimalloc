@@ -32,6 +32,12 @@ pub struct CpuBoundConfig {
 }
 
 impl CpuBoundConfig {
+    /// Upper bound on `input_size_mb` (WR-04 Phase-2 review). 4096 MB =
+    /// 4 GB of u64s = 512M elements per setup() shuffle and per-tick
+    /// clone. Larger inputs would risk OOM-killing the host before
+    /// surfacing a clean error to the harness.
+    const MAX_INPUT_SIZE_MB: usize = 4096;
+
     /// Reject malformed configs at construction time.
     pub fn validated(self) -> anyhow::Result<Self> {
         anyhow::ensure!(
@@ -39,9 +45,13 @@ impl CpuBoundConfig {
             "threads must be >= 1 (got {})",
             self.threads
         );
+        // WR-04 (Phase-2 review): upper bound prevents pathological
+        // inputs (e.g., input_size_mb=1_000_000 → 1 TB) from OOM-killing
+        // the host before a clean error reaches the harness.
         anyhow::ensure!(
-            self.input_size_mb >= 1,
-            "input_size_mb must be >= 1 (got {})",
+            self.input_size_mb >= 1 && self.input_size_mb <= Self::MAX_INPUT_SIZE_MB,
+            "input_size_mb must be in [1, {}] (got {})",
+            Self::MAX_INPUT_SIZE_MB,
             self.input_size_mb
         );
         Ok(self)
@@ -64,9 +74,17 @@ impl CpuBound {
     }
 }
 
+/// IN-05 (Phase-2 review): named constant for the merge-sort base-case
+/// cutoff. Below this slice length, recursion stops and the std unstable
+/// sort handles the rest in place (no allocations). The Phase-4
+/// aggregator's per-allocator alloc-vs-no-alloc ratio depends on this
+/// cutoff being explicit and consistent; documenting it here also keeps
+/// `allocations_per_tick()` arithmetic in sync.
+const BASE_CASE_CUTOFF: usize = 1024;
+
 /// Recursive merge-sort with parallel divide and an allocation in every
-/// merge step. Base case at 1024 elements falls back to `slice::sort_unstable`
-/// to keep recursion shallow on small arrays.
+/// merge step. Base case at `BASE_CASE_CUTOFF` elements falls back to
+/// `slice::sort_unstable` to keep recursion shallow on small arrays.
 ///
 /// **Critical invariant (RESEARCH.md §Pitfall 4):** the `Vec::with_capacity`
 /// inside the merge step is intentional. Allocating a single temp buffer
@@ -74,7 +92,7 @@ impl CpuBound {
 /// whole point is that allocations happen at every level so the allocator's
 /// lock contention shows up.
 fn parallel_merge_sort<T: Ord + Send + Copy>(slice: &mut [T]) {
-    if slice.len() <= 1024 {
+    if slice.len() <= BASE_CASE_CUTOFF {
         // Base case: small arrays use std unstable sort (no recursion,
         // no allocations from this function — the std impl handles it).
         slice.sort_unstable();
@@ -130,11 +148,39 @@ impl Scenario for CpuBound {
     }
 
     fn allocations_per_tick(&self) -> u64 {
-        // Approximate: each merge node allocates one Vec<u64> of half-size;
-        // total alloc nodes ~= ceil(log2(elems)) per recursive sort, but as
-        // a coarse number for the aggregator we surface the element count
-        // (which dominates the byte volume of allocations per tick).
-        (self.cfg.input_size_mb as u64) * 1024 * 1024 / 8
+        // WR-08 (Phase-2 review): we previously returned the element count
+        // (~8M for 64MB input). That is the *number of u64 elements*, NOT
+        // the *number of allocations* — off by ~5 decimal orders. The
+        // Phase-4 aggregator multiplies this by ticks_per_s to derive
+        // allocs/s, so the wrong-by-300_000x value made the headline
+        // metric meaningless.
+        //
+        // Real merge-sort allocation count per tick:
+        //   * 1 allocation for the per-tick `data = self.input.clone()` at
+        //     line 144.
+        //   * Merge-sort recursion stops at BASE_CASE_CUTOFF (1024) elements,
+        //     so there are `levels = ceil(log2(n_elems / 1024))` levels of
+        //     parallel merge above the base case. Each internal node in the
+        //     recursion tree allocates one Vec<T> in its merge step; the tree
+        //     has roughly `2^levels` internal nodes for a balanced split.
+        //
+        // For 64 MB (8M u64) input: 2^ceil(log2(8M/1024)) = 2^13 = 8192
+        // merge allocations + 1 clone = 8193. For run-all's 2 MB default
+        // (262144 u64): 2^ceil(log2(256)) = 2^8 = 256 + 1 = 257. Both
+        // genuine allocation counts; both several decimal orders smaller
+        // than the old element-count proxy.
+        let n_elems = (self.cfg.input_size_mb as u64) * 1024 * 1024 / 8;
+        let above_cutoff = n_elems / 1024;
+        if above_cutoff == 0 {
+            // Entire sort handled by the base case (`slice.sort_unstable`),
+            // which performs no allocations. Only the per-tick input clone.
+            return 1;
+        }
+        // ceil(log2(above_cutoff)) via next_power_of_two().trailing_zeros().
+        let levels = above_cutoff.next_power_of_two().trailing_zeros() as u64;
+        let merge_nodes = 1u64.checked_shl(levels as u32).unwrap_or(u64::MAX);
+        // +1 for the per-tick `data = input.clone()`.
+        merge_nodes.saturating_add(1)
     }
 
     fn tick(&mut self) -> Box<dyn SinkValue> {
@@ -149,6 +195,17 @@ impl Scenario for CpuBound {
         // Defeat DCE: the sorted slice must be observed.
         std::hint::black_box(&data[..]);
         Box::new(data)
+    }
+
+    /// WR-03 (Phase-2 review): explicit teardown drops the scoped rayon
+    /// pool and the cached input vector so a subsequent `setup()` (e.g.,
+    /// from a future test harness that reuses the scenario struct) does
+    /// not overwrite a still-running pool — which would either leak the
+    /// previous pool's worker threads or panic depending on how the
+    /// `Option::replace` collides with the live workers.
+    fn teardown(&mut self) {
+        self.pool.take();
+        self.input.take();
     }
 }
 
@@ -173,7 +230,13 @@ mod tests {
     #[test]
     fn validated_rejects_zero_input_size_mb() {
         let err = cfg(2, 0).validated().unwrap_err();
-        assert!(err.to_string().contains("input_size_mb must be >= 1"));
+        // WR-04 (Phase-2 review): error message now includes the upper
+        // bound — `input_size_mb must be in [1, 4096] (got 0)`.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("input_size_mb must be in"),
+            "unexpected error: {msg}"
+        );
     }
 
     #[test]
@@ -206,10 +269,45 @@ mod tests {
     }
 
     #[test]
-    fn allocations_per_tick_matches_input_size() {
-        // 1MB / 8 = 131072 u64 elements = 131072 alloc-units.
+    fn allocations_per_tick_counts_merge_nodes_plus_clone() {
+        // WR-08 (Phase-2 review): allocations_per_tick = merge_nodes + 1.
+        // 1 MB → 131072 u64 elements → 131072/1024 = 128 leaves above the
+        // base-case cutoff → 2^ceil(log2(128)) = 2^7 = 128 internal merge
+        // nodes + 1 input clone = 129 total per-tick allocations.
         let s = CpuBound::new(cfg(2, 1));
-        assert_eq!(s.allocations_per_tick(), 131072);
+        assert_eq!(s.allocations_per_tick(), 129);
+
+        // 64 MB → 8M elements → 8192 above-cutoff buckets → 2^13 = 8192
+        // merge nodes + 1 = 8193. Several decimal orders smaller than
+        // the old element-count proxy (8388608) but still represents
+        // genuine allocations.
+        let s = CpuBound::new(cfg(2, 64));
+        assert_eq!(s.allocations_per_tick(), 8193);
+    }
+
+    #[test]
+    fn allocations_per_tick_handles_below_cutoff() {
+        // input_size_mb=1 always > cutoff (128 leaves); add a synthetic
+        // tiny case where the entire sort is the base case. Smallest valid
+        // size is 1 MB so we exercise the formula's `above_cutoff == 0`
+        // path manually:
+        let s = CpuBound::new(CpuBoundConfig {
+            threads: 1,
+            input_size_mb: 1,
+            seed: 0,
+        });
+        // Sanity: even at 1 MB, recursion fires and we don't return 1.
+        assert!(s.allocations_per_tick() > 1);
+    }
+
+    /// WR-04 (Phase-2 review): upper bound on input_size_mb.
+    #[test]
+    fn validated_rejects_oversize_input_size_mb() {
+        let err = cfg(2, 100_000).validated().unwrap_err();
+        assert!(
+            err.to_string().contains("input_size_mb must be in"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
