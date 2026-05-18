@@ -6,7 +6,11 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "alloc-bench-cli", version, about = "Memory allocator benchmark suite")]
+#[command(
+    name = "alloc-bench-cli",
+    version,
+    about = "Memory allocator benchmark suite"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,

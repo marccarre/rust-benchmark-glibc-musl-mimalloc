@@ -117,8 +117,14 @@ mod tests {
 
     #[test]
     fn size_dist_from_str() {
-        assert!(matches!("uniform".parse::<SizeDist>(), Ok(SizeDist::Uniform)));
-        assert!(matches!("bimodal".parse::<SizeDist>(), Ok(SizeDist::Bimodal)));
+        assert!(matches!(
+            "uniform".parse::<SizeDist>(),
+            Ok(SizeDist::Uniform)
+        ));
+        assert!(matches!(
+            "bimodal".parse::<SizeDist>(),
+            Ok(SizeDist::Bimodal)
+        ));
         assert!(matches!("pareto".parse::<SizeDist>(), Ok(SizeDist::Pareto)));
         assert!("xyz".parse::<SizeDist>().is_err());
     }

@@ -86,8 +86,5 @@ fn chrono_like_now() -> String {
     let hh = secs_in_day / 3_600;
     let mm = (secs_in_day % 3_600) / 60;
     let ss = secs_in_day % 60;
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        y, m, d, hh, mm, ss
-    )
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hh, mm, ss)
 }

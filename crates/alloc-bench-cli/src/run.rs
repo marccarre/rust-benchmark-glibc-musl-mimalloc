@@ -100,8 +100,9 @@ pub fn run_multithread(
 
     let json = serde_json::to_string_pretty(&run_record)?;
     match output {
-        Some(path) => std::fs::write(path, &json)
-            .with_context(|| format!("writing results to {path}"))?,
+        Some(path) => {
+            std::fs::write(path, &json).with_context(|| format!("writing results to {path}"))?
+        }
         None => println!("{json}"),
     }
     Ok(())

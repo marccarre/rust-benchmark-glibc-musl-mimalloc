@@ -35,9 +35,7 @@ pub fn run<S: Scenario, F: Fn() -> serde_json::Value>(
     alloc_stats: F,
 ) -> anyhow::Result<HarnessOutcome> {
     if cfg.warmup < Duration::from_secs(1) {
-        bail!(
-            "warm-up must be >= 1s; allocator caches need to populate (see PITFALLS.md §1.5)"
-        );
+        bail!("warm-up must be >= 1s; allocator caches need to populate (see PITFALLS.md §1.5)");
     }
 
     scenario.setup()?;
