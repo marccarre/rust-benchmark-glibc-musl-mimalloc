@@ -3,10 +3,10 @@ use std::time::Duration;
 use alloc_bench_core::metrics::env::read_env;
 use alloc_bench_core::output::{Build, Run, ScenarioInfo};
 use alloc_bench_core::scenarios::{
-    ChannelConfig, Contention, ContentionConfig, CpuBound, CpuBoundConfig, FragmentationConfig,
-    FragmentationSoak, MemBound, MemBoundConfig, MemBoundMode, Mpmc, Mpsc, Multithread,
-    MultithreadConfig, PayloadDist, ReallocStorm, ReallocStormConfig, SizeDist, Spmc, Web,
-    WebConfig,
+    ChannelConfig, ChannelKind, Contention, ContentionConfig, CpuBound, CpuBoundConfig,
+    FragmentationConfig, FragmentationSoak, MemBound, MemBoundConfig, MemBoundMode, Mpmc, Mpsc,
+    Multithread, MultithreadConfig, PayloadDist, ReallocStorm, ReallocStormConfig, SizeDist, Spmc,
+    Web, WebConfig,
 };
 use alloc_bench_core::{run, HarnessConfig, SCHEMA_VERSION};
 use anyhow::{anyhow, ensure, Context, Result};
@@ -205,7 +205,9 @@ pub fn run_spmc(
 ) -> Result<()> {
     // Topology constraint: SPMC = "Single Producer, Multi Consumer". The
     // shared ChannelConfig is permissive enough to model all three
-    // topologies, so we enforce the SP invariant here at the CLI surface.
+    // topologies, so we enforce the SP invariant at config-construction
+    // via WR-06's `validated_for(ChannelKind::Spmc)`. The early CLI-level
+    // check below stays for a clearer error message at the CLI surface.
     ensure!(
         producers == 1,
         "SPMC requires --producers 1 (got {producers})"
@@ -223,7 +225,7 @@ pub fn run_spmc(
         payload_dist: dist,
         seed,
     }
-    .validated()?;
+    .validated_for(ChannelKind::Spmc)?;
     let mut scenario = Spmc::new(cfg);
 
     let hcfg = HarnessConfig {
@@ -269,7 +271,7 @@ pub fn run_mpsc(
         payload_dist: dist,
         seed,
     }
-    .validated()?;
+    .validated_for(ChannelKind::Mpsc)?;
     let mut scenario = Mpsc::new(cfg);
 
     let hcfg = HarnessConfig {
@@ -310,7 +312,7 @@ pub fn run_mpmc(
         payload_dist: dist,
         seed,
     }
-    .validated()?;
+    .validated_for(ChannelKind::Mpmc)?;
     let mut scenario = Mpmc::new(cfg);
 
     let hcfg = HarnessConfig {
@@ -530,12 +532,10 @@ type ScenarioBuilder = Box<dyn FnOnce() -> Result<Box<dyn alloc_bench_core::Scen
 /// duration=5s per scenario × 10 scenarios ≈ 60s total, matching CONTEXT.md
 /// "small, fast — finishes in ~60s".
 fn default_scenarios(seed: u64) -> Vec<(&'static str, Option<String>, ScenarioBuilder)> {
-    use alloc_bench_core::scenarios::{
-        ChannelConfig, Contention, ContentionConfig, CpuBound, CpuBoundConfig, FragmentationConfig,
-        FragmentationSoak, MemBound, MemBoundConfig, MemBoundMode, Mpmc, Mpsc, Multithread,
-        MultithreadConfig, PayloadDist, ReallocStorm, ReallocStormConfig, SizeDist, Spmc, Web,
-        WebConfig,
-    };
+    // IN-04 (Phase-2 review): scenario types are imported at the module
+    // level (see top of file). The duplicate `use` block that lived
+    // here was redundant and read as forgotten cleanup. All names
+    // resolve via the module-level import.
 
     vec![
         // 1. Multithread (SCEN-01, Phase-1 baseline) — 4 threads × 10k objects.
@@ -556,6 +556,7 @@ fn default_scenarios(seed: u64) -> Vec<(&'static str, Option<String>, ScenarioBu
             }) as ScenarioBuilder,
         ),
         // 2. SPMC (SCEN-03) — 1 producer, 4 consumers race for messages.
+        //    WR-06: validated_for(ChannelKind::Spmc) enforces producers==1.
         (
             "spmc",
             Some("iters_per_s".to_string()),
@@ -568,11 +569,12 @@ fn default_scenarios(seed: u64) -> Vec<(&'static str, Option<String>, ScenarioBu
                     payload_dist: PayloadDist::Uniform,
                     seed,
                 }
-                .validated()?;
+                .validated_for(ChannelKind::Spmc)?;
                 Ok(Box::new(Spmc::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
             }) as ScenarioBuilder,
         ),
         // 3. MPSC (SCEN-04) — 4 producers, 1 receiver.
+        //    WR-06: validated_for(ChannelKind::Mpsc) enforces consumers==1.
         (
             "mpsc",
             Some("iters_per_s".to_string()),
@@ -585,11 +587,12 @@ fn default_scenarios(seed: u64) -> Vec<(&'static str, Option<String>, ScenarioBu
                     payload_dist: PayloadDist::Uniform,
                     seed,
                 }
-                .validated()?;
+                .validated_for(ChannelKind::Mpsc)?;
                 Ok(Box::new(Mpsc::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
             }) as ScenarioBuilder,
         ),
         // 4. MPMC (SCEN-05) — 4 producers × 4 consumers, both sides cloned.
+        //    WR-06: validated_for(ChannelKind::Mpmc) is a no-op topology check.
         (
             "mpmc",
             Some("iters_per_s".to_string()),
@@ -602,7 +605,7 @@ fn default_scenarios(seed: u64) -> Vec<(&'static str, Option<String>, ScenarioBu
                     payload_dist: PayloadDist::Uniform,
                     seed,
                 }
-                .validated()?;
+                .validated_for(ChannelKind::Mpmc)?;
                 Ok(Box::new(Mpmc::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
             }) as ScenarioBuilder,
         ),

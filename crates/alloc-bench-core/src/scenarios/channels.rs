@@ -77,6 +77,21 @@ pub struct ChannelConfig {
     pub seed: u64,
 }
 
+/// WR-06 (Phase-2 review): topology tag carried into `validated_for(...)`
+/// so SPMC/MPSC topology constraints are enforced at config-construction
+/// time rather than only at the CLI surface. Bypassing the CLI (e.g.,
+/// constructing `Mpsc::new(ChannelConfig{ consumers: 5, .. })` directly)
+/// previously silently ran with the topology-illegal config: the Mpsc
+/// tick body uses `cfg.consumers` for serialisation but only spawns one
+/// receiver thread, so 4 of those 5 consumers do not exist — the
+/// recorded JSON `consumers: 5` is then a lie.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelKind {
+    Spmc,
+    Mpsc,
+    Mpmc,
+}
+
 impl ChannelConfig {
     /// Reject malformed configs at construction time so the hot path
     /// (workers + RNG) stays panic-free. Mirrors MultithreadConfig::validated.
@@ -102,6 +117,31 @@ impl ChannelConfig {
             self.objects_per_tick
         );
         Ok(self)
+    }
+
+    /// WR-06 (Phase-2 review): like `validated`, but additionally
+    /// enforces topology constraints for the channel `kind`. SPMC must
+    /// have exactly one producer; MPSC must have exactly one consumer;
+    /// MPMC accepts any `>= 1`. Both `Mpsc::new` / `Spmc::new` callers
+    /// (and `default_scenarios` in run.rs) should prefer this over
+    /// `validated` so the topology constraint is enforced at the type-
+    /// level entry point.
+    pub fn validated_for(self, kind: ChannelKind) -> anyhow::Result<Self> {
+        let cfg = self.validated()?;
+        match kind {
+            ChannelKind::Spmc => anyhow::ensure!(
+                cfg.producers == 1,
+                "SPMC requires producers == 1 (got {})",
+                cfg.producers
+            ),
+            ChannelKind::Mpsc => anyhow::ensure!(
+                cfg.consumers == 1,
+                "MPSC requires consumers == 1 (got {})",
+                cfg.consumers
+            ),
+            ChannelKind::Mpmc => {}
+        }
+        Ok(cfg)
     }
 }
 
@@ -523,5 +563,46 @@ mod tests {
         c.objects_per_tick = 16;
         let s = Mpmc::new(c.validated().unwrap());
         assert_eq!(s.allocations_per_tick(), 16);
+    }
+
+    /// WR-06 (Phase-2 review): topology constraints enforced at config
+    /// construction.
+    #[test]
+    fn validated_for_spmc_rejects_multi_producer() {
+        let err = cfg(2, 4, 16)
+            .validated_for(ChannelKind::Spmc)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("SPMC requires producers == 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validated_for_spmc_accepts_single_producer() {
+        assert!(cfg(1, 4, 16).validated_for(ChannelKind::Spmc).is_ok());
+    }
+
+    #[test]
+    fn validated_for_mpsc_rejects_multi_consumer() {
+        let err = cfg(4, 2, 16)
+            .validated_for(ChannelKind::Mpsc)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("MPSC requires consumers == 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validated_for_mpsc_accepts_single_consumer() {
+        assert!(cfg(4, 1, 16).validated_for(ChannelKind::Mpsc).is_ok());
+    }
+
+    #[test]
+    fn validated_for_mpmc_accepts_any_topology() {
+        assert!(cfg(2, 2, 16).validated_for(ChannelKind::Mpmc).is_ok());
+        assert!(cfg(1, 1, 16).validated_for(ChannelKind::Mpmc).is_ok());
+        assert!(cfg(8, 4, 16).validated_for(ChannelKind::Mpmc).is_ok());
     }
 }

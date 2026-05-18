@@ -6,7 +6,7 @@ pub mod mem_bound;
 pub mod multithread;
 pub mod realloc_storm;
 pub mod web;
-pub use channels::{ChannelConfig, Mpmc, Mpsc, PayloadDist, Spmc};
+pub use channels::{ChannelConfig, ChannelKind, Mpmc, Mpsc, PayloadDist, Spmc};
 pub use contention::{Contention, ContentionConfig};
 pub use cpu_bound::{CpuBound, CpuBoundConfig};
 pub use fragmentation::{FragmentationConfig, FragmentationSoak};
