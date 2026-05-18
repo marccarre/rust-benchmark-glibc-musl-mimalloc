@@ -509,6 +509,327 @@ pub fn run_fragmentation_soak(
     drive_and_emit(&mut scenario, "fragmentation-soak", None, &hcfg, output)
 }
 
+// =============================================================================
+// Phase-2 Wave-3 — run-all (SCEN-11)
+// =============================================================================
+
+/// Builder closure that constructs a boxed scenario lazily. We use `FnOnce`
+/// + `Box<dyn ...>` so the registry can capture `seed` by move and run-all
+/// only pays the construction cost for scenarios it actually invokes (and
+/// only once).
+type ScenarioBuilder =
+    Box<dyn FnOnce() -> Result<Box<dyn alloc_bench_core::Scenario>> + 'static>;
+
+/// Returns the canonical 10-scenario registry used by `run-all`. Each entry
+/// is `(name, optional unit label, builder)`. Order is the documented
+/// execution order — multithread first (matches Phase-1), web LAST so its
+/// port-bind work doesn't slow earlier scenarios. Ordering is asserted by
+/// the integration test (`run_all_smoke`) as a set of unique names, not a
+/// sequence — Phase-4 aggregator does its own canonical sort.
+///
+/// Default per-scenario configs are deliberately small: warmup=1s +
+/// duration=5s per scenario × 10 scenarios ≈ 60s total, matching CONTEXT.md
+/// "small, fast — finishes in ~60s".
+fn default_scenarios(seed: u64) -> Vec<(&'static str, Option<String>, ScenarioBuilder)> {
+    use alloc_bench_core::scenarios::{
+        ChannelConfig, Contention, ContentionConfig, CpuBound, CpuBoundConfig,
+        FragmentationConfig, FragmentationSoak, MemBound, MemBoundConfig, MemBoundMode, Mpmc,
+        Mpsc, Multithread, MultithreadConfig, PayloadDist, ReallocStorm, ReallocStormConfig,
+        SizeDist, Spmc, Web, WebConfig,
+    };
+
+    vec![
+        // 1. Multithread (SCEN-01, Phase-1 baseline) — 4 threads × 10k objects.
+        (
+            "multithread",
+            None,
+            Box::new(move || {
+                let cfg = MultithreadConfig {
+                    threads: 4,
+                    objects: 10_000,
+                    size_dist: SizeDist::Uniform,
+                    size_min: 16,
+                    size_max: 1024,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(Multithread::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+        // 2. SPMC (SCEN-03) — 1 producer, 4 consumers race for messages.
+        (
+            "spmc",
+            Some("iters_per_s".to_string()),
+            Box::new(move || {
+                let cfg = ChannelConfig {
+                    producers: 1,
+                    consumers: 4,
+                    capacity: 1024,
+                    objects_per_tick: 1_000,
+                    payload_dist: PayloadDist::Uniform,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(Spmc::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+        // 3. MPSC (SCEN-04) — 4 producers, 1 receiver.
+        (
+            "mpsc",
+            Some("iters_per_s".to_string()),
+            Box::new(move || {
+                let cfg = ChannelConfig {
+                    producers: 4,
+                    consumers: 1,
+                    capacity: 1024,
+                    objects_per_tick: 1_000,
+                    payload_dist: PayloadDist::Uniform,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(Mpsc::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+        // 4. MPMC (SCEN-05) — 4 producers × 4 consumers, both sides cloned.
+        (
+            "mpmc",
+            Some("iters_per_s".to_string()),
+            Box::new(move || {
+                let cfg = ChannelConfig {
+                    producers: 4,
+                    consumers: 4,
+                    capacity: 1024,
+                    objects_per_tick: 1_000,
+                    payload_dist: PayloadDist::Uniform,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(Mpmc::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+        // 5. Contention (SCEN-08) — 8 threads × 1k iters/tick. CONTEXT.md
+        //    default of 64 threads + 10k iters is too heavy for the
+        //    run-all smoke; trimmed for the ~60s budget.
+        (
+            "contention",
+            None,
+            Box::new(move || {
+                let cfg = ContentionConfig {
+                    threads: 8,
+                    alloc_size: 64,
+                    iters_per_tick: 1_000,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(Contention::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+        // 6. Mem-bound (SCEN-07) — picks LinkedList because it's the
+        //    alloc-heavy mode (per RESEARCH.md §Mem-bound: "linked-list
+        //    is the alloc-heavy one"). StridedArray's pre-allocated
+        //    buffer doesn't exercise the allocator on tick boundaries.
+        (
+            "mem-bound",
+            None,
+            Box::new(move || {
+                let cfg = MemBoundConfig {
+                    mode: MemBoundMode::LinkedList,
+                    size_mb: 2,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(MemBound::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+        // 7. Realloc-storm (SCEN-10) — 4MB target keeps tick latency
+        //    well under HIST_MAX_NS even on slow CI.
+        (
+            "realloc-storm",
+            None,
+            Box::new(move || {
+                let cfg = ReallocStormConfig {
+                    target_size_mb: 4,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(ReallocStorm::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+        // 8. CPU-bound (SCEN-06) — 2 threads × 2MB input. Default 64MB
+        //    input + N threads is overkill for the smoke budget.
+        (
+            "cpu-bound",
+            None,
+            Box::new(move || {
+                let cfg = CpuBoundConfig {
+                    threads: 2,
+                    input_size_mb: 2,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(CpuBound::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+        // 9. Fragmentation-soak (SCEN-09) — 1k allocs/tick, cap 500.
+        //    Default 5min duration is replaced by run-all's 5s measure.
+        (
+            "fragmentation-soak",
+            None,
+            Box::new(move || {
+                let cfg = FragmentationConfig {
+                    allocs_per_tick: 1_000,
+                    long_lived_cap: 500,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(FragmentationSoak::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+        // 10. Web (SCEN-02) — placed LAST so its port-bind + tokio
+        //     runtime construction doesn't delay the other scenarios.
+        //     1 server worker + 2 client workers keeps loopback HTTP
+        //     latency low and predictable.
+        (
+            "web",
+            Some("req_per_s".to_string()),
+            Box::new(move || {
+                let cfg = WebConfig {
+                    server_workers: 1,
+                    client_workers: 2,
+                    seed,
+                }
+                .validated()?;
+                Ok(Box::new(Web::new(cfg)) as Box<dyn alloc_bench_core::Scenario>)
+            }) as ScenarioBuilder,
+        ),
+    ]
+}
+
+/// Extract a human-readable message from a panic payload. `panic::catch_unwind`
+/// returns `Err(Box<dyn Any + Send>)` whose payload is typically the panic
+/// argument: a `&'static str`, a `String`, or something else opaque.
+fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "panic with non-string payload".to_string()
+    }
+}
+
+/// Build a degenerate `Run` record for a scenario that errored or panicked.
+/// Metric numerics are zeroed (the consumer reads `error` for the truth).
+/// Env + Build are still populated so Phase-4 aggregator can attribute the
+/// failure to the right host / commit / allocator.
+fn degenerate_failure_run(name: &str, error: String) -> Result<Run> {
+    use alloc_bench_core::output::{HarnessInfo, LatencyNs, Metrics, Rusage};
+    let outcome = alloc_bench_core::HarnessOutcome {
+        harness: HarnessInfo {
+            warmup_duration_s: 0.0,
+            measurement_duration_s: 0.0,
+            samples_count: 0,
+        },
+        metrics: Metrics {
+            ticks_per_s: 0.0,
+            allocations_per_tick: 0,
+            tick_latency_ns: LatencyNs {
+                p50: 0,
+                p95: 0,
+                p99: 0,
+                p999: 0,
+                max: 0,
+            },
+            peak_rss_kb: 0,
+            rss_growth_samples: vec![],
+            rusage: Rusage {
+                user_time_s: 0.0,
+                sys_time_s: 0.0,
+                minor_faults: 0,
+                major_faults: 0,
+                voluntary_csw: 0,
+                involuntary_csw: 0,
+                peak_rss_kb: 0,
+            },
+            allocator_stats: serde_json::json!({"kind": allocator::name()}),
+        },
+    };
+    assemble_run(
+        name,
+        serde_json::json!({}),
+        None,
+        outcome,
+        Some("failed".to_string()),
+        Some(error),
+    )
+}
+
+/// Phase-2 SCEN-11. Run all 10 scenarios sequentially under a uniform light
+/// HarnessConfig (warmup=1s + duration=5s) and emit a JSON array of Run
+/// records. Per CONTEXT.md decision, per-scenario panics are caught via
+/// `panic::catch_unwind(AssertUnwindSafe(...))` so the other scenarios
+/// still produce records — the run-all binary exits 0 even when scenarios
+/// fail. The `error` field on each Run is the source of truth for failure
+/// cases; consumers reading `status == "failed"` MUST also read `error`.
+pub fn run_all(output: Option<&str>, seed: u64) -> Result<()> {
+    let cfg = HarnessConfig {
+        warmup: Duration::from_secs(1),
+        measure: Duration::from_secs(5),
+        seed,
+    };
+
+    let mut runs: Vec<Run> = Vec::new();
+
+    for (name, unit, builder) in default_scenarios(seed) {
+        eprintln!("[run-all] starting scenario: {name}");
+        // CONTEXT.md decision: continue on per-scenario failure. The
+        // closure mutably borrows scenario state (the boxed scenario
+        // built inside) so AssertUnwindSafe is required (RESEARCH.md
+        // §A8). The double-Result pattern (`Ok(Ok(_)) | Ok(Err(_)) |
+        // Err(panic)`) distinguishes "panicked" from "anyhow-errored"
+        // so we can record both as `status: "failed"` with the right
+        // error message.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Run> {
+            let mut scenario = builder()?;
+            let outcome = run(&mut scenario, &cfg, allocator::stats)?;
+            let scenario_name = alloc_bench_core::Scenario::name(&scenario).to_string();
+            let scenario_config = alloc_bench_core::Scenario::config_json(&scenario);
+            assemble_run(
+                &scenario_name,
+                scenario_config,
+                unit.clone(),
+                outcome,
+                Some("success".to_string()),
+                None,
+            )
+        }));
+
+        match result {
+            Ok(Ok(run)) => {
+                eprintln!("[run-all]   {name}: success");
+                runs.push(run);
+            }
+            Ok(Err(e)) => {
+                eprintln!("[run-all]   {name}: error — {e}");
+                runs.push(degenerate_failure_run(name, e.to_string())?);
+            }
+            Err(panic) => {
+                let msg = panic_message(&panic);
+                eprintln!("[run-all]   {name}: panicked — {msg}");
+                runs.push(degenerate_failure_run(name, msg)?);
+            }
+        }
+    }
+
+    let json = serde_json::to_string_pretty(&runs)?;
+    match output {
+        Some(path) => std::fs::write(path, &json)
+            .with_context(|| format!("writing run-all results to {path}"))?,
+        None => println!("{json}"),
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
