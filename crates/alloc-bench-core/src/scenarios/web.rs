@@ -161,6 +161,16 @@ pub struct Web {
     runtime: Option<tokio::runtime::Runtime>,
     server_addr: Option<SocketAddr>,
     client: Option<reqwest::Client>,
+    /// CR-04 (Phase-2 review): per-tick counter mixed into the payload
+    /// RNG seed so each tick generates a different `UserProfile`. Without
+    /// this, every tick produced the *exact same* serialised body, letting
+    /// the HTTP layer (reqwest connection pool, hyper request encoder,
+    /// axum handler) potentially cache identical bodies and elide the
+    /// per-payload allocation work the benchmark is supposed to measure.
+    /// `wrapping_add` so a multi-million-tick soak never panics on
+    /// overflow. Mirrors `FragmentationSoak::rng` (which advances across
+    /// ticks for the same reason).
+    tick_seq: u64,
 }
 
 impl Web {
@@ -170,6 +180,7 @@ impl Web {
             runtime: None,
             server_addr: None,
             client: None,
+            tick_seq: 0,
         }
     }
 }
@@ -246,10 +257,16 @@ impl Scenario for Web {
             self.server_addr.expect("setup() not called")
         );
         let client_workers = self.cfg.client_workers;
-        // Re-seed each tick from cfg.seed for deterministic payload shape.
-        // The actual allocations under test are the per-task `payload.clone()`
-        // + reqwest's request body buffer + the JSON response body buffer.
-        let payload = make_user_profile(&mut SmallRng::seed_from_u64(self.cfg.seed));
+        // CR-04 (Phase-2 review): mix the tick counter into the seed so
+        // each tick produces a *different* UserProfile. Without this, the
+        // payload was byte-identical every tick — letting the HTTP layer
+        // potentially cache and elide the per-payload allocation work
+        // the benchmark targets. The seed-and-counter pattern mirrors
+        // MPSC's `cfg.seed.wrapping_add(p as u64)` (channels.rs:239),
+        // which derives per-thread RNG seeds from the same base.
+        let seed = self.cfg.seed.wrapping_add(self.tick_seq);
+        self.tick_seq = self.tick_seq.wrapping_add(1);
+        let payload = make_user_profile(&mut SmallRng::seed_from_u64(seed));
 
         let responses: Vec<UserProfile> = runtime.block_on(async move {
             let mut handles = Vec::with_capacity(client_workers);
