@@ -80,6 +80,12 @@ impl Scenario for Multithread {
         Ok(())
     }
 
+    fn allocations_per_tick(&self) -> u64 {
+        // WR-01: each tick spawns `threads` workers that each allocate
+        // `objects` boxed slices.
+        (self.cfg.threads as u64).saturating_mul(self.cfg.objects as u64)
+    }
+
     fn tick(&mut self) -> Box<dyn SinkValue> {
         let cfg = self.cfg.clone();
         let mut all: Vec<Vec<Box<[u8]>>> = Vec::with_capacity(cfg.threads);

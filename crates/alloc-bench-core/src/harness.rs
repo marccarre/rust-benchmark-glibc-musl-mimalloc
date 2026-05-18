@@ -15,6 +15,10 @@ pub trait Scenario {
     fn setup(&mut self) -> anyhow::Result<()>;
     fn tick(&mut self) -> Box<dyn SinkValue>;
     fn teardown(&mut self) {}
+    /// Number of allocations performed per `tick()` invocation.
+    /// WR-01: surfaced into `Metrics::allocations_per_tick` so consumers can
+    /// derive the allocation rate as `ticks_per_s * allocations_per_tick`.
+    fn allocations_per_tick(&self) -> u64;
 }
 
 pub struct HarnessConfig {
@@ -71,7 +75,10 @@ pub fn run<S: Scenario, F: Fn() -> serde_json::Value>(
 
     let measurement_s = measure_start.elapsed().as_secs_f64();
     let samples_count = hist.len();
-    let throughput_ops_per_s = samples_count as f64 / measurement_s;
+    // WR-01: this is the rate of *ticks*, not of allocations. Multiply by
+    // `allocations_per_tick` to derive the allocation rate.
+    let ticks_per_s = samples_count as f64 / measurement_s;
+    let allocations_per_tick = scenario.allocations_per_tick();
 
     scenario.teardown();
 
@@ -80,8 +87,9 @@ pub fn run<S: Scenario, F: Fn() -> serde_json::Value>(
     let alloc_stats_val = alloc_stats();
 
     let metrics = Metrics {
-        throughput_ops_per_s,
-        latency_ns: LatencyNs {
+        ticks_per_s,
+        allocations_per_tick,
+        tick_latency_ns: LatencyNs {
             p50: hist.value_at_quantile(0.50),
             p95: hist.value_at_quantile(0.95),
             p99: hist.value_at_quantile(0.99),
@@ -120,6 +128,9 @@ mod tests {
         }
         fn tick(&mut self) -> Box<dyn SinkValue> {
             Box::new(vec![0u8; 64])
+        }
+        fn allocations_per_tick(&self) -> u64 {
+            1
         }
     }
 

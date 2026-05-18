@@ -50,6 +50,8 @@ pub struct HarnessInfo {
     pub samples_count: u64,
 }
 
+/// Latency percentiles for a single `tick()` (one batched fork/join across
+/// all worker threads), measured in nanoseconds. *Not* per-allocation latency.
 #[derive(Debug, Serialize)]
 pub struct LatencyNs {
     pub p50: u64,
@@ -78,8 +80,17 @@ pub struct Rusage {
 
 #[derive(Debug, Serialize)]
 pub struct Metrics {
-    pub throughput_ops_per_s: f64,
-    pub latency_ns: LatencyNs,
+    /// Number of `Scenario::tick()` invocations completed per second
+    /// during the measurement window. WR-01: this is *not* an allocation
+    /// rate — divide `ticks_per_s * allocations_per_tick` to derive that.
+    pub ticks_per_s: f64,
+    /// Number of allocations a single `Scenario::tick()` performs.
+    /// For Multithread: `threads * objects`. WR-01: lets consumers compute
+    /// the allocation rate as `ticks_per_s * allocations_per_tick`.
+    pub allocations_per_tick: u64,
+    /// WR-01: per-tick fork/join latency, *not* per-allocation latency.
+    /// See `LatencyNs` for full semantics.
+    pub tick_latency_ns: LatencyNs,
     pub peak_rss_kb: u64,
     pub rss_growth_samples: Vec<RssGrowthSample>,
     pub rusage: Rusage,
