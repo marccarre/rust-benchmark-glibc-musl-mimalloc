@@ -204,41 +204,57 @@ impl Scenario for Web {
     /// Build the runtime, bind the listener, spawn the server, build the
     /// client. All four artefacts survive into `tick()` via `self`.
     fn setup(&mut self) -> anyhow::Result<()> {
+        use anyhow::Context;
+
         // RESEARCH.md §Pitfall 1: runtime built ONCE here, never per tick.
+        // WR-01 (Phase-2 review): wrap each ? with .context(...) so a
+        // run-all failure surfaces a meaningful error string in the JSON
+        // \`error\` field rather than a bare \`std::io::Error\` like
+        // "Address already in use (os error 98)".
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(self.cfg.server_workers)
             .enable_all()
-            .build()?;
+            .build()
+            .context("web scenario: build tokio runtime")?;
 
         // Bind on the runtime — TcpListener::bind is async.
-        let actual_addr = runtime.block_on(async {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-            let addr = listener.local_addr()?;
-            // We need the listener to outlive this block_on, so move it
-            // into the spawned server task. Capture addr first.
-            let app = axum::Router::new().route("/echo", axum::routing::post(echo_handler));
-            // Spawn the server fire-and-forget on the runtime so the bind
-            // happens here-and-now and the serve loop runs in the background
-            // for the rest of the scenario's life.
-            tokio::spawn(async move {
-                // RESEARCH.md §A6: axum::serve(...).await returns ! on
-                // success and Err on shutdown. Swallow any error so a
-                // dropped runtime doesn't propagate into a runtime panic.
-                axum::serve(listener, app)
+        let actual_addr = runtime
+            .block_on(async {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
                     .await
-                    .unwrap_or_else(|e| eprintln!("axum::serve exited: {e}"));
-            });
-            Ok::<_, std::io::Error>(addr)
-        })?;
+                    .context("web scenario: bind 127.0.0.1:0")?;
+                let addr = listener
+                    .local_addr()
+                    .context("web scenario: read listener local_addr")?;
+                // We need the listener to outlive this block_on, so move it
+                // into the spawned server task. Capture addr first.
+                let app =
+                    axum::Router::new().route("/echo", axum::routing::post(echo_handler));
+                // Spawn the server fire-and-forget on the runtime so the bind
+                // happens here-and-now and the serve loop runs in the background
+                // for the rest of the scenario's life.
+                tokio::spawn(async move {
+                    // RESEARCH.md §A6: axum::serve(...).await returns ! on
+                    // success and Err on shutdown. Swallow any error so a
+                    // dropped runtime doesn't propagate into a runtime panic.
+                    axum::serve(listener, app)
+                        .await
+                        .unwrap_or_else(|e| eprintln!("axum::serve exited: {e}"));
+                });
+                Ok::<_, anyhow::Error>(addr)
+            })
+            .context("web scenario: setup listener + server task")?;
 
         // reqwest client uses the runtime context implicitly via
         // tokio::runtime::Handle::current() inside its async fns.
-        let client = runtime.block_on(async {
-            reqwest::Client::builder()
-                .pool_max_idle_per_host(self.cfg.client_workers)
-                .timeout(Duration::from_secs(10))
-                .build()
-        })?;
+        let client = runtime
+            .block_on(async {
+                reqwest::Client::builder()
+                    .pool_max_idle_per_host(self.cfg.client_workers)
+                    .timeout(Duration::from_secs(10))
+                    .build()
+            })
+            .context("web scenario: build reqwest client")?;
 
         self.runtime = Some(runtime);
         self.server_addr = Some(actual_addr);
@@ -268,37 +284,60 @@ impl Scenario for Web {
         self.tick_seq = self.tick_seq.wrapping_add(1);
         let payload = make_user_profile(&mut SmallRng::seed_from_u64(seed));
 
-        let responses: Vec<UserProfile> = runtime.block_on(async move {
+        // WR-02 (Phase-2 review): each per-task HTTP round-trip used
+        // .expect("client.send failed") / .expect("response.json failed"),
+        // turning a transient HTTP error (slow-spawn, connection-reset
+        // mid-shutdown) into a panic that takes down the WHOLE web
+        // scenario via tokio::JoinHandle. A single dropped request
+        // should not invalidate the other 99% of ticks. Each task now
+        // returns an Option<UserProfile> — on transport / decode failure
+        // we eprintln + return None instead of panicking. We still
+        // black_box the count of failures so the optimizer can't elide
+        // the failure path itself.
+        let (responses, failed_count): (Vec<UserProfile>, u64) = runtime.block_on(async move {
             let mut handles = Vec::with_capacity(client_workers);
             for _ in 0..client_workers {
                 let client = client.clone();
                 let url = url.clone();
                 let payload = payload.clone();
                 handles.push(tokio::spawn(async move {
-                    let resp = client
-                        .post(&url)
-                        .json(&payload)
-                        .send()
-                        .await
-                        .expect("client.send failed");
-                    resp.json::<UserProfile>()
-                        .await
-                        .expect("response.json failed")
+                    let resp = match client.post(&url).json(&payload).send().await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            eprintln!("web tick: send failed (recorded as None): {e}");
+                            return None;
+                        }
+                    };
+                    match resp.json::<UserProfile>().await {
+                        Ok(p) => Some(p),
+                        Err(e) => {
+                            eprintln!("web tick: response.json failed (recorded as None): {e}");
+                            None
+                        }
+                    }
                 }));
             }
             let mut out = Vec::with_capacity(client_workers);
+            let mut failed = 0u64;
             for h in handles {
-                // Phase-1 CR-02: propagate worker panics so the harness
-                // fails loudly instead of recording bogus throughput.
+                // Phase-1 CR-02: panics inside the spawned task still
+                // propagate via resume_unwind — only HTTP-layer errors
+                // are downgraded to None. A panic indicates a logic bug
+                // (e.g., invariant violation in the handler) and MUST
+                // surface so the harness records `status: "failed"`.
                 match h.await {
-                    Ok(resp) => out.push(resp),
+                    Ok(Some(resp)) => out.push(resp),
+                    Ok(None) => failed = failed.wrapping_add(1),
                     Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
                     Err(e) => panic!("tokio task failed: {e}"),
                 }
             }
-            out
+            (out, failed)
         });
 
+        // Defeat DCE on both the success-vec AND the failure count so
+        // the optimizer cannot elide either path.
+        std::hint::black_box(failed_count);
         Box::new(std::hint::black_box(responses))
     }
 
