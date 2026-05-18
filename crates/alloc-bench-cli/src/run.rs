@@ -75,8 +75,8 @@ pub(crate) fn assemble_run(
     error: Option<String>,
 ) -> Result<Run> {
     let env = read_env()?;
-    let sha = build_info::GIT_SHA;
-    let sha8 = &sha[..sha.len().min(8)];
+    // IN-01: shared truncation helper in build_info::short_sha.
+    let sha8 = build_info::short_sha();
     let run_id = format!("{}-{sha8}", chrono::Utc::now().to_rfc3339());
 
     let scenario_info = ScenarioInfo {

@@ -128,8 +128,17 @@ fn make_user_profile(rng: &mut SmallRng) -> UserProfile {
             serde_json::Value::String("c".repeat(rng.gen_range(4..=12))),
         ]),
     );
-    let created_at = "2026-05-18T10:00:00Z".to_string();
-    let last_login = "2026-05-18T11:00:00Z".to_string();
+    // IN-03 (Phase-2 review): timestamps are hardcoded by design — payload
+    // determinism matters more than freshness for allocator stress
+    // benchmarking, and identical-length 20-byte ASCII strings keep the
+    // resulting JSON layout invariant across ticks. A maintainer reading
+    // these in 2027+ should NOT replace them with chrono::Utc::now() —
+    // doing so would re-introduce per-tick byte-shape variation that the
+    // CR-04 tick_seq fix already controls via the RNG seed advance.
+    const CREATED_AT: &str = "2026-05-18T10:00:00Z";
+    const LAST_LOGIN: &str = "2026-05-18T11:00:00Z";
+    let created_at = CREATED_AT.to_string();
+    let last_login = LAST_LOGIN.to_string();
     // 256-byte free-form notes (CONTEXT.md target).
     let notes = "lorem_".repeat(42);
 

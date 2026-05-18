@@ -218,8 +218,6 @@ fn num_cpus_default() -> usize {
 }
 
 fn print_version_banner() {
-    let sha = build_info::GIT_SHA;
-    let sha8 = &sha[..sha.len().min(8)];
     let dirty = if build_info::GIT_DIRTY == "true" {
         "-dirty"
     } else {
@@ -233,7 +231,7 @@ fn print_version_banner() {
         tgt = build_info::TARGET_TRIPLE,
         host = build_info::HOST_TRIPLE,
         prof = build_info::PROFILE,
-        sha = sha8,
+        sha = build_info::short_sha(), // IN-01: shared truncation helper
         dirty = dirty,
         ts = build_info::BUILD_TIMESTAMP,
     );
