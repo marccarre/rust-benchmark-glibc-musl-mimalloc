@@ -19,8 +19,9 @@ rand = { version = "0.8", features = ["small_rng"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 anyhow = "1"
 tikv-jemallocator = "0.6"
-tikv-jemalloc-ctl = "0.6"
-mimalloc = { version = "0.1", default-features = false }
+tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
+mimalloc = { version = "0.1", default-features = false, features = ["extended"] }
+libmimalloc-sys = { version = "0.1", features = ["extended"] }
 num_cpus = "1.16"
 
 [profile.release]
