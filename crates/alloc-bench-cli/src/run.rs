@@ -52,30 +52,37 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
     ))
 }
 
-/// Drive the harness for a single scenario, then assemble + emit the Run
-/// record. Centralised so each `run_<name>` function below is just argument
-/// parsing + scenario construction + this call. Avoids drift between
-/// scenarios in how Build/Env/Run records are built.
-fn drive_and_emit<S: alloc_bench_core::Scenario>(
-    scenario: &mut S,
-    name: &str,
-    unit: Option<String>,
-    cfg: &HarnessConfig,
-    output: Option<&str>,
-) -> Result<()> {
-    let outcome = run(scenario, cfg, allocator::stats)?;
-
+/// Build a `Run` record from a finished `HarnessOutcome`. Centralises the
+/// Build / Env / Run-record construction so single-scenario dispatch
+/// (`run_<name>`) and the multi-scenario `run_all` path share one source of
+/// truth — no drift in `git_sha`, `rustflags`, `run_id` shape, or schema
+/// fields.
+///
+/// Phase-2 additions:
+/// - `status` / `error` parameters control the Phase-2 additive `Run.status`
+///   and `Run.error` fields. Single-scenario callers pass `None` for both
+///   (legacy byte-identical shape preserved). `run_all` is the only caller
+///   that ever passes `Some(...)`.
+/// - `unit` controls the Phase-2 additive `ScenarioInfo.unit` label
+///   (`"req_per_s"`, `"iters_per_s"`, etc.).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn assemble_run(
+    scenario_name: &str,
+    scenario_config: serde_json::Value,
+    scenario_unit: Option<String>,
+    outcome: alloc_bench_core::HarnessOutcome,
+    status: Option<String>,
+    error: Option<String>,
+) -> Result<Run> {
     let env = read_env()?;
     let sha = build_info::GIT_SHA;
     let sha8 = &sha[..sha.len().min(8)];
     let run_id = format!("{}-{sha8}", chrono::Utc::now().to_rfc3339());
 
     let scenario_info = ScenarioInfo {
-        name: name.to_string(),
-        config: alloc_bench_core::Scenario::config_json(scenario),
-        // Phase-2 additive schema field. `None` is skipped on serialize so
-        // existing Phase-1 JSON shapes stay byte-identical.
-        unit,
+        name: scenario_name.to_string(),
+        config: scenario_config,
+        unit: scenario_unit,
     };
 
     let build = Build {
@@ -90,7 +97,7 @@ fn drive_and_emit<S: alloc_bench_core::Scenario>(
         rustflags: build_info::RUSTFLAGS.to_string(),
     };
 
-    let run_record = Run {
+    Ok(Run {
         schema_version: SCHEMA_VERSION,
         run_id,
         env,
@@ -98,14 +105,17 @@ fn drive_and_emit<S: alloc_bench_core::Scenario>(
         scenario: scenario_info,
         harness: outcome.harness,
         metrics: outcome.metrics,
-        // Phase-2 additive fields. Single-scenario runs leave both `None`
-        // so `skip_serializing_if` drops the keys, preserving Phase-1
-        // byte-identical JSON. Only `run_all` populates these.
-        status: None,
-        error: None,
-    };
+        status,
+        error,
+    })
+}
 
-    let json = serde_json::to_string_pretty(&run_record)?;
+/// Serialize a single `Run` to pretty JSON and write it to either a file
+/// (`Some(path)`) or stdout (`None`). Mirrors the Phase-1 single-scenario
+/// emission path. `run_all` (Task 3) does NOT use this — it serialises the
+/// `Vec<Run>` array directly.
+pub(crate) fn write_or_print(run: &Run, output: Option<&str>) -> Result<()> {
+    let json = serde_json::to_string_pretty(run)?;
     match output {
         Some(path) => {
             std::fs::write(path, &json).with_context(|| format!("writing results to {path}"))?
@@ -113,6 +123,31 @@ fn drive_and_emit<S: alloc_bench_core::Scenario>(
         None => println!("{json}"),
     }
     Ok(())
+}
+
+/// Drive the harness for a single scenario, then assemble + emit the Run
+/// record. Centralised so each `run_<name>` function below is just argument
+/// parsing + scenario construction + this call. Avoids drift between
+/// scenarios in how Build/Env/Run records are built.
+fn drive_and_emit<S: alloc_bench_core::Scenario>(
+    scenario: &mut S,
+    name: &str,
+    unit: Option<String>,
+    cfg: &HarnessConfig,
+    output: Option<&str>,
+) -> Result<()> {
+    let outcome = run(scenario, cfg, allocator::stats)?;
+    // Single-scenario runs always produce a successful Run with `status:
+    // None, error: None` so Phase-1 byte-identical JSON shape is preserved.
+    let run_record = assemble_run(
+        name,
+        alloc_bench_core::Scenario::config_json(scenario),
+        unit,
+        outcome,
+        None,
+        None,
+    )?;
+    write_or_print(&run_record, output)
 }
 
 #[allow(clippy::too_many_arguments)]
