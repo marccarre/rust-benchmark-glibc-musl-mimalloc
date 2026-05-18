@@ -13,7 +13,7 @@ A comprehensive Rust benchmark suite comparing four memory allocators (glibc/ptm
 - **Build**: Allocator selection is compile-time (Cargo feature flag) — no LD_PRELOAD; ensures fair, reproducible comparisons
 - **Reproducibility**: Justfile and Docker builds must be fully self-contained — no manual steps beyond `just bench-all`
 - **Image size**: Docker images should be as small as practical; Dive CI gate enforces no large unexpected layers
-- **Performance build flags**: LTO=fat, codegen-units=1, opt-level=3 mandatory for benchmark binaries; debug symbols stripped from Docker images
+- **Performance build flags**: LTO=fat, codegen-units=1, opt-level=3 mandatory for benchmark binaries; debug symbols stripped from Docker images. `panic` is left at the toolchain default (`unwind`) so `alloc-bench-cli run-all`'s `std::panic::catch_unwind` per-scenario isolation contract holds in release builds — see Phase-2 review CR-01 for the trade-off (negligible binary-size overhead vs. losing the per-scenario `status:"failed"` Run record path entirely if `panic = "abort"`).
 - **Compiler version in output**: All bench binaries must print rustc version, target triple, allocator name at startup (injected at compile time)
 <!-- GSD:project-end -->
 

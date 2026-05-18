@@ -36,7 +36,16 @@ codegen-units = 1
 opt-level = 3
 strip = "symbols"
 debug = false
-panic = "abort"
+# CR-01 (Phase-2 review): keep `panic = "unwind"` (the toolchain default).
+# `run-all` (alloc-bench-cli) uses `std::panic::catch_unwind` to record a
+# `status: "failed"` Run record per scenario rather than aborting the
+# whole process when a single scenario panics. Setting `panic = "abort"`
+# silently disables `catch_unwind` in release — the documented per-scenario
+# isolation contract from CONTEXT.md / RESEARCH.md would not hold and the
+# release binary would diverge from `cargo test`'s dev profile (which uses
+# unwind). Cost is a marginally larger binary and slightly slower panic
+# codegen — both negligible for a benchmark tool whose hot paths never
+# panic. Do NOT re-enable `panic = "abort"` without redesigning run-all.
 overflow-checks = false
 
 [profile.bench-debug]
