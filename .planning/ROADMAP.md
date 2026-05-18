@@ -12,7 +12,7 @@ Deliver a reproducible Rust allocator benchmark suite end-to-end in five MVP-sha
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation MVP Slice** - Workspace, allocator features, harness, first scenario, results.json — one allocator end-to-end
+- [x] **Phase 1: Foundation MVP Slice** - Workspace, allocator features, harness, first scenario, results.json — one allocator end-to-end (completed 2026-05-18)
 - [ ] **Phase 2: Scenario Fan-Out** - Remaining ten benchmark scenarios on top of the harness contract
 - [ ] **Phase 3: Docker Matrix & Local Orchestration** - Six Dockerfiles, Justfile bench-all, NUMA/cgroup hardening
 - [ ] **Phase 4: Aggregator & Dashboard** - alloc-bench-aggregator, Plotly HTML, REPORT.md with Mermaid diagrams
@@ -92,7 +92,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation MVP Slice | 0/TBD | Not started | - |
+| 1. Foundation MVP Slice | 2/2 | Complete   | 2026-05-18 |
 | 2. Scenario Fan-Out | 0/TBD | Not started | - |
 | 3. Docker Matrix & Local Orchestration | 0/TBD | Not started | - |
 | 4. Aggregator & Dashboard | 0/TBD | Not started | - |
