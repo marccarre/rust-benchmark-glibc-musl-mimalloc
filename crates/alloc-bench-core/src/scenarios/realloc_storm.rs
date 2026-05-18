@@ -29,14 +29,39 @@ pub struct ReallocStormConfig {
 }
 
 impl ReallocStormConfig {
+    /// WR-04 + WR-05 (Phase-2 review): cap `target_size_mb` so a CLI value
+    /// like `--target-size 1000000` errors cleanly instead of either
+    /// (a) wrapping silently when multiplied by `1024 * 1024` because
+    /// `[profile.release]` has `overflow-checks = false`, or (b) running
+    /// an effectively-infinite `Vec::push` loop. 4 GB is well above any
+    /// realistic workload and well below `isize::MAX / (1024 * 1024)` on
+    /// any 32-bit or 64-bit target we ship for.
+    const MAX_TARGET_SIZE_MB: usize = 4096;
+
     pub fn validated(self) -> anyhow::Result<Self> {
         anyhow::ensure!(
-            self.target_size_mb >= 1,
-            "target_size_mb must be >= 1 (got {})",
+            self.target_size_mb >= 1 && self.target_size_mb <= Self::MAX_TARGET_SIZE_MB,
+            "target_size_mb must be in [1, {}] (got {})",
+            Self::MAX_TARGET_SIZE_MB,
             self.target_size_mb
         );
-        // Upper bound left to the user — pushing more than host RAM is
-        // their problem (CONTEXT.md decision).
+        // WR-05 (Phase-2 review): belt-and-braces guard against future
+        // MAX_TARGET_SIZE_MB bumps — verify the byte count fits both u64
+        // and usize on this platform. `[profile.release]` has
+        // `overflow-checks = false` so a wrap in `tick()` would be silent.
+        let _ = (self.target_size_mb as u64)
+            .checked_mul(1024 * 1024)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "target_size_mb={} overflows u64 byte count",
+                    self.target_size_mb
+                )
+            })?;
+        anyhow::ensure!(
+            self.target_size_mb <= isize::MAX as usize / (1024 * 1024),
+            "target_size_mb must be <= {} on this platform",
+            isize::MAX as usize / (1024 * 1024)
+        );
         Ok(self)
     }
 }
@@ -103,7 +128,21 @@ mod tests {
     #[test]
     fn validated_rejects_zero_target_size_mb() {
         let err = cfg(0).validated().unwrap_err();
-        assert!(err.to_string().contains("target_size_mb must be >= 1"));
+        assert!(
+            err.to_string().contains("target_size_mb must be in"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// WR-04 + WR-05 (Phase-2 review): pathological target_size_mb is
+    /// rejected before it can wrap or run an infinite push loop.
+    #[test]
+    fn validated_rejects_oversize_target_size_mb() {
+        let err = cfg(100_000).validated().unwrap_err();
+        assert!(
+            err.to_string().contains("target_size_mb must be in"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

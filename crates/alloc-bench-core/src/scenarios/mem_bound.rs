@@ -45,10 +45,17 @@ pub struct MemBoundConfig {
 }
 
 impl MemBoundConfig {
+    /// WR-04 (Phase-2 review): upper bound on `size_mb` — 4 GB is far
+    /// beyond any realistic mem-bound workload and prevents pathological
+    /// inputs (e.g., `--size 1000000`) from OOM-killing the host before
+    /// a clean error reaches the harness.
+    const MAX_SIZE_MB: usize = 4096;
+
     pub fn validated(self) -> anyhow::Result<Self> {
         anyhow::ensure!(
-            self.size_mb >= 1,
-            "size_mb must be >= 1 (got {})",
+            self.size_mb >= 1 && self.size_mb <= Self::MAX_SIZE_MB,
+            "size_mb must be in [1, {}] (got {})",
+            Self::MAX_SIZE_MB,
             self.size_mb
         );
         Ok(self)
@@ -200,7 +207,22 @@ mod tests {
     #[test]
     fn validated_rejects_zero_size_mb() {
         let err = cfg(MemBoundMode::LinkedList, 0).validated().unwrap_err();
-        assert!(err.to_string().contains("size_mb must be >= 1"));
+        assert!(
+            err.to_string().contains("size_mb must be in"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// WR-04 (Phase-2 review): pathological size_mb is rejected.
+    #[test]
+    fn validated_rejects_oversize_size_mb() {
+        let err = cfg(MemBoundMode::LinkedList, 100_000)
+            .validated()
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("size_mb must be in"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
