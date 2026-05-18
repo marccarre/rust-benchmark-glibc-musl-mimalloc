@@ -3,9 +3,10 @@ use std::time::Duration;
 use alloc_bench_core::metrics::env::read_env;
 use alloc_bench_core::output::{Build, Run, ScenarioInfo};
 use alloc_bench_core::scenarios::{
-    ChannelConfig, Contention, ContentionConfig, MemBound, MemBoundConfig, MemBoundMode, Mpmc,
-    Mpsc, Multithread, MultithreadConfig, PayloadDist, ReallocStorm, ReallocStormConfig, SizeDist,
-    Spmc,
+    ChannelConfig, Contention, ContentionConfig, CpuBound, CpuBoundConfig, FragmentationConfig,
+    FragmentationSoak, MemBound, MemBoundConfig, MemBoundMode, Mpmc, Mpsc, Multithread,
+    MultithreadConfig, PayloadDist, ReallocStorm, ReallocStormConfig, SizeDist, Spmc, Web,
+    WebConfig,
 };
 use alloc_bench_core::{run, HarnessConfig, SCHEMA_VERSION};
 use anyhow::{anyhow, ensure, Context, Result};
@@ -371,6 +372,101 @@ pub fn run_realloc_storm(
         seed,
     };
     drive_and_emit(&mut scenario, "realloc-storm", None, &hcfg, output)
+}
+
+// =============================================================================
+// Phase-2 Wave-2 — web / cpu-bound / fragmentation-soak (SCEN-02/06/09)
+// =============================================================================
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_web(
+    server_workers: usize,
+    client_workers: usize,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+
+    let cfg = WebConfig {
+        server_workers,
+        client_workers,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = Web::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    // CONTEXT.md schema decision: web reports req/s as the throughput unit.
+    drive_and_emit(
+        &mut scenario,
+        "web",
+        Some("req_per_s".to_string()),
+        &hcfg,
+        output,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_cpu_bound(
+    threads: usize,
+    input_size_mb: usize,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+
+    let cfg = CpuBoundConfig {
+        threads,
+        input_size_mb,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = CpuBound::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    drive_and_emit(&mut scenario, "cpu-bound", None, &hcfg, output)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_fragmentation_soak(
+    allocs_per_tick: u64,
+    long_lived_cap: usize,
+    warmup: &str,
+    duration: &str,
+    seed: u64,
+    output: Option<&str>,
+) -> Result<()> {
+    let warmup = parse_duration(warmup)?;
+    let measure = parse_duration(duration)?;
+
+    let cfg = FragmentationConfig {
+        allocs_per_tick,
+        long_lived_cap,
+        seed,
+    }
+    .validated()?;
+    let mut scenario = FragmentationSoak::new(cfg);
+
+    let hcfg = HarnessConfig {
+        warmup,
+        measure,
+        seed,
+    };
+    drive_and_emit(&mut scenario, "fragmentation-soak", None, &hcfg, output)
 }
 
 #[cfg(test)]

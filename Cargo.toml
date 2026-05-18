@@ -24,6 +24,11 @@ mimalloc = { version = "0.1", default-features = false, features = ["extended"] 
 libmimalloc-sys = { version = "0.1", features = ["extended"] }
 num_cpus = "1.16"
 crossbeam-channel = "0.5"
+axum = { version = "0.8", default-features = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+tower = { version = "0.5" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rayon = { version = "1" }
 
 [profile.release]
 lto = "fat"

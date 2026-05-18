@@ -151,6 +151,53 @@ enum Cmd {
         #[arg(long)]
         output: Option<String>,
     },
+    /// Web service: in-process axum server + reqwest client load generator
+    Web {
+        #[arg(long, default_value_t = 4)]
+        server_workers: usize,
+        #[arg(long, default_value_t = 16)]
+        client_workers: usize,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "60s")]
+        duration: String,
+        #[arg(long, default_value_t = 0xDEADBEEF)]
+        seed: u64,
+        #[arg(long)]
+        output: Option<String>,
+    },
+    /// CPU-bound: parallel merge-sort with allocations in the merge step
+    CpuBound {
+        #[arg(long, default_value_t = num_cpus_default())]
+        threads: usize,
+        /// Input size in megabytes (--input-size MB).
+        #[arg(long, default_value_t = 64)]
+        input_size: usize,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "60s")]
+        duration: String,
+        #[arg(long, default_value_t = 0xDEADBEEF)]
+        seed: u64,
+        #[arg(long)]
+        output: Option<String>,
+    },
+    /// Fragmentation-soak: 90/10 short/long-lived workload with capped
+    /// long-lived state across ticks
+    FragmentationSoak {
+        #[arg(long, default_value_t = 10_000)]
+        allocs_per_tick: u64,
+        #[arg(long, default_value_t = 10_000)]
+        long_lived_cap: usize,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "5m")]
+        duration: String,
+        #[arg(long, default_value_t = 0xDEADBEEF)]
+        seed: u64,
+        #[arg(long)]
+        output: Option<String>,
+    },
 }
 
 fn num_cpus_default() -> usize {
@@ -332,6 +379,60 @@ fn main() -> Result<()> {
         }) => {
             print_version_banner();
             run::run_realloc_storm(target_size, &warmup, &duration, seed, output.as_deref())
+        }
+        Some(Cmd::Web {
+            server_workers,
+            client_workers,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => {
+            print_version_banner();
+            run::run_web(
+                server_workers,
+                client_workers,
+                &warmup,
+                &duration,
+                seed,
+                output.as_deref(),
+            )
+        }
+        Some(Cmd::CpuBound {
+            threads,
+            input_size,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => {
+            print_version_banner();
+            run::run_cpu_bound(
+                threads,
+                input_size,
+                &warmup,
+                &duration,
+                seed,
+                output.as_deref(),
+            )
+        }
+        Some(Cmd::FragmentationSoak {
+            allocs_per_tick,
+            long_lived_cap,
+            warmup,
+            duration,
+            seed,
+            output,
+        }) => {
+            print_version_banner();
+            run::run_fragmentation_soak(
+                allocs_per_tick,
+                long_lived_cap,
+                &warmup,
+                &duration,
+                seed,
+                output.as_deref(),
+            )
         }
     }
 }
