@@ -1,0 +1,12 @@
+# Host build flags for alloc-bench (WS-05).
+#
+# `target-cpu=native` lets LLVM emit instructions specific to the host CPU
+# (NEON, AVX-512, BMI2, etc.). For the host smoke build this is fair because
+# the user is benchmarking on their own hardware; the Phase 3 Docker matrix
+# uses a separate baseline target ("x86_64-v3" or similar) for cross-machine
+# comparability — see DOCK-* requirements.
+#
+# Captured into the JSON Run record at build time via build.rs's
+# CARGO_ENCODED_RUSTFLAGS read; see crates/alloc-bench-cli/build.rs.
+[build]
+rustflags = ["-C", "target-cpu=native"]
