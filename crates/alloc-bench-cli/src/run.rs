@@ -50,14 +50,18 @@ pub fn run_multithread(
     let measure = parse_duration(duration)?;
     let dist: SizeDist = size_dist.parse()?;
 
-    let mut scenario = Multithread::new(MultithreadConfig {
+    // WR-02 / WR-03: validate inputs up-front so the worker hot path is
+    // panic-free.
+    let cfg = MultithreadConfig {
         threads,
         objects,
         size_dist: dist,
         size_min,
         size_max,
         seed,
-    });
+    }
+    .validated()?;
+    let mut scenario = Multithread::new(cfg);
 
     let cfg = HarnessConfig {
         warmup,

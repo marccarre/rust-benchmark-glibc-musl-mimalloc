@@ -36,6 +36,26 @@ pub struct MultithreadConfig {
     pub seed: u64,
 }
 
+impl MultithreadConfig {
+    /// WR-02 / WR-03: reject malformed configs at construction time so the
+    /// hot path (workers + RNG) stays panic-free.
+    /// - `size_min >= 1` prevents zero-size buffer indexed write panics.
+    /// - `size_min <= size_max` prevents `Rng::gen_range` panics.
+    /// - `threads >= 1` and `objects >= 1` keep the workload non-degenerate.
+    pub fn validated(self) -> anyhow::Result<Self> {
+        anyhow::ensure!(self.size_min >= 1, "size_min must be >= 1 (got {})", self.size_min);
+        anyhow::ensure!(
+            self.size_min <= self.size_max,
+            "size_min ({}) must be <= size_max ({})",
+            self.size_min,
+            self.size_max
+        );
+        anyhow::ensure!(self.threads >= 1, "threads must be >= 1 (got {})", self.threads);
+        anyhow::ensure!(self.objects >= 1, "objects must be >= 1 (got {})", self.objects);
+        Ok(self)
+    }
+}
+
 pub struct Multithread {
     cfg: MultithreadConfig,
 }
@@ -147,5 +167,53 @@ mod tests {
             let s = sample_size(&mut rng, SizeDist::Uniform, 16, 1024);
             assert!((16..=1024).contains(&s));
         }
+    }
+
+    fn cfg(threads: usize, objects: usize, size_min: usize, size_max: usize) -> MultithreadConfig {
+        MultithreadConfig {
+            threads,
+            objects,
+            size_dist: SizeDist::Uniform,
+            size_min,
+            size_max,
+            seed: 1,
+        }
+    }
+
+    #[test]
+    fn validated_rejects_zero_size_min() {
+        let err = cfg(1, 1, 0, 16).validated().unwrap_err();
+        assert!(err.to_string().contains("size_min must be >= 1"));
+    }
+
+    #[test]
+    fn validated_rejects_inverted_size_range() {
+        let err = cfg(1, 1, 32, 16).validated().unwrap_err();
+        assert!(err.to_string().contains("size_min"));
+        assert!(err.to_string().contains("size_max"));
+    }
+
+    #[test]
+    fn validated_rejects_zero_threads() {
+        let err = cfg(0, 1, 16, 32).validated().unwrap_err();
+        assert!(err.to_string().contains("threads must be >= 1"));
+    }
+
+    #[test]
+    fn validated_rejects_zero_objects() {
+        let err = cfg(1, 0, 16, 32).validated().unwrap_err();
+        assert!(err.to_string().contains("objects must be >= 1"));
+    }
+
+    #[test]
+    fn validated_accepts_well_formed_config() {
+        let c = cfg(2, 100, 16, 1024).validated();
+        assert!(c.is_ok());
+    }
+
+    #[test]
+    fn validated_accepts_equal_size_min_max() {
+        let c = cfg(1, 1, 16, 16).validated();
+        assert!(c.is_ok());
     }
 }
