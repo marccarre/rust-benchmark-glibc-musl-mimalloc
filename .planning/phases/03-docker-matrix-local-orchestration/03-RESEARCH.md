@@ -986,27 +986,27 @@ The Justfile `dive-check` recipe can detect host availability and fall back to t
 
 **Discuss-phase user confirmation needed:** A6 (mimalloc 0.1.43 → 0.1.50 drift since the SUMMARY.md was written) is the only user-facing surprise; everything else is locked by CONTEXT.md or verified live. Plan-phase should note in SUMMARY.md "mimalloc resolved to 0.1.50" so the report accurately credits the version under test.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Will `wolfi-base` provide enough OS context for the `metrics::env::read_os_version` `/proc/version` read?**
    - What we know: Wolfi runs on Linux kernel via Docker; `/proc/version` should be present; mounted by Docker per spec.
    - What's unclear: Whether Wolfi's kernel string is human-readable (it's the host kernel exposed inside the container).
-   - Recommendation: Run smoke test; expect `Linux version 6.x.y …` content. Acceptable as-is.
+   - **RESOLVED:** Run smoke test; expect `Linux version 6.x.y …` content. Acceptable as-is — Plan 04 verifies in the bench-all loop via the env block of each cell's results.json.
 
 2. **Should `bench-all` run the matrix in glibc-then-musl order or alpha order by tag?**
    - What we know: Sequential (D-11). 18 cells, ~2.4 h total at 65s × 11 scenarios × 18.
    - What's unclear: Whether grouping all glibc together amortizes the BuildKit cache better than alpha order.
-   - Recommendation: Group by libc family (musl together, glibc together). cargo-chef's recipe.json hash is the same for any glibc target with same features — reordering glibc alpha doesn't help. The win is putting all musl after all glibc so the BuildKit can re-use the chef base layer for each family. Pattern 2 already orders this way (glibc first).
+   - **RESOLVED:** Group by libc family (glibc first, musl after). cargo-chef's recipe.json hash is the same for any glibc target with same features — reordering glibc alpha doesn't help. The win is putting all musl after all glibc so the BuildKit can re-use the chef base layer for each family. Pattern 2 + the `_matrix_cells` heredoc in Plan 03 already orders this way (glibc first).
 
 3. **Where does `OCI_CREATED` come from when `bench-all` runs over multiple minutes?**
    - What we know: `date -u +%Y-%m-%dT%H:%M:%SZ` returns the moment of recipe invocation. If the Justfile loops 18 cells, each cell stamps a different `OCI_CREATED`.
    - What's unclear: Whether this is a problem (it slightly differs across cells in the same matrix run).
-   - Recommendation: Acceptable. `OCI_CREATED` is per-image; different cells legitimately have different build moments. If reproducibility matters, capture a single `BUILD_TS=$(date -u …)` at the top of the `bench-all` recipe and pass it through to every cell — but this is a minor refinement that plan-phase can decide.
+   - **RESOLVED:** Per-cell timestamps are acceptable. `OCI_CREATED` is per-image; different cells legitimately have different build moments. Plan 03's `build` recipe computes `OCI_CREATED` fresh per cell — this is the simpler implementation and matches the OCI spec's "time at which the image was built" semantics. A future Phase-5 CI refinement may capture a single `BUILD_TS` at the top of `bench-all` for stricter reproducibility, but Phase 3 ships per-cell timestamps as designed.
 
 4. **Does `cargo install --locked cargo-chef@0.1.77` work on `rust:1.83-alpine` (which has only ~6 MB of free space in the default partition)?**
    - What we know: cargo-chef compiles from source; needs ~50 MB of build space.
    - What's unclear: Whether `rust:1.83-alpine` has enough.
-   - Recommendation: Smoke-test. If fails, install via `apk add cargo-chef` if available, or use `LukeMathWalker/cargo-chef` precompiled binary (their CI publishes one). Alternatively, use a heavier `rust:1.83-bookworm` builder for musl too — cargo can target musl from a glibc builder via `rustup target add x86_64-unknown-linux-musl + linker` setup. This is a fallback if D-06's "rust:1.83-alpine for musl" doesn't pan out.
+   - **RESOLVED:** Moot — plans use `rust:1.91-alpine` (D-06 was originally `rust:1.83-alpine`; resolved to 1.91 via discuss-phase). Smoke test in Plan 04 confirms 1.91 image exists and the cargo-chef install completes inside the builder stage. If a future drift back to a smaller alpine image breaks the install, fall back to either `apk add cargo-chef` (if available in alpine repos) or precompiled cargo-chef binary from LukeMathWalker/cargo-chef releases.
 
 ## Environment Availability
 
