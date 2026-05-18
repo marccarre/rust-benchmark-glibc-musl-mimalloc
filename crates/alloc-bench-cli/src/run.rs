@@ -98,6 +98,11 @@ fn drive_and_emit<S: alloc_bench_core::Scenario>(
         scenario: scenario_info,
         harness: outcome.harness,
         metrics: outcome.metrics,
+        // Phase-2 additive fields. Single-scenario runs leave both `None`
+        // so `skip_serializing_if` drops the keys, preserving Phase-1
+        // byte-identical JSON. Only `run_all` populates these.
+        status: None,
+        error: None,
     };
 
     let json = serde_json::to_string_pretty(&run_record)?;
