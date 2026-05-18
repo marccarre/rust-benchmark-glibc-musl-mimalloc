@@ -1,0 +1,44 @@
+# .dockerignore — keep Docker build context small for cargo-chef multi-stage builds.
+#
+# Source: 03-RESEARCH.md §"Code Examples §7" + 03-CONTEXT.md (.dockerignore is mandatory).
+# Without this file, every COPY scoops ~500 MB of target/ — see RESEARCH §Pitfall 8.
+#
+# IMPORTANT: this list MUST stay in sync with the in-tree .gitignore for the items
+# below (target/, results/, report/, *.swp, .DS_Store) so the Docker build context
+# matches the tracked workspace; everything else is Docker-specific.
+#
+# Files that MUST NOT appear here (the Dockerfiles + cargo-chef rely on them):
+#   Cargo.toml          ← workspace + per-crate manifests
+#   Cargo.lock          ← reproducible exact-version pins
+#   crates/             ← all source
+#   rust-toolchain.toml ← rustc version pin (1.91)
+#   .cargo/config.toml  ← rustflags for native (Phase 1); Dockerfiles override via ENV RUSTFLAGS
+#   crates/*/build.rs   ← scoped under crates/, never excluded
+#
+# We intentionally keep *.md (CLAUDE.md, README.md) inside the build context: their
+# presence is harmless and BuildKit's dep-cache invalidation behaves better when the
+# context shape is consistent across builds.
+
+# Build artifacts (huge — most important entry)
+target/
+**/target/
+
+# Git, planning, IDE
+.git/
+.gitignore
+.planning/
+.cargo-ok
+.idea/
+.vscode/
+*.swp
+
+# Docs that don't affect the build
+docs/
+
+# Test/bench results (generated, not part of source)
+results/
+report/
+
+# Misc
+.DS_Store
+**/*.rs.bk
