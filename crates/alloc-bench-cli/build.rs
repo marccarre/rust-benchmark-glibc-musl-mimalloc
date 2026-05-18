@@ -58,6 +58,17 @@ fn main() {
     println!("cargo:rustc-env=BUILD_RUSTFLAGS={}", rustflags);
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=CARGO_ENCODED_RUSTFLAGS");
+    // CR-03: keep BUILD_GIT_SHA / BUILD_GIT_DIRTY / BUILD_TIMESTAMP fresh.
+    // .git/HEAD changes on branch switch; .git/index changes on stage/commit.
+    // Paths are relative to this package directory (crates/alloc-bench-cli/).
+    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    println!("cargo:rerun-if-changed=../../.git/index");
+    // For tracking unstaged edits to tracked files, the simplest pragmatic
+    // option is "always rerun". Trade-off: every `cargo build` re-executes
+    // this script (a few git commands + small civil-date math, ~tens of ms).
+    // Forensic accuracy of git_dirty in results.json is worth the cost since
+    // the project's reproducibility constraint depends on it.
+    println!("cargo:rerun-if-changed=NULL");
 }
 
 /// RFC3339 timestamp without pulling chrono into build-deps. Uses
