@@ -9,7 +9,16 @@ pub fn read_rss_kb() -> anyhow::Result<u64> {
             .nth(1)
             .ok_or_else(|| anyhow::anyhow!("/proc/self/statm parse error"))?
             .parse()?;
-        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as u64;
+        // WR-05: sysconf returns -1 (i64) on failure with errno set.
+        // Casting -1 to u64 yields 0xFFFF_FFFF_FFFF_FFFF and silently
+        // produces a meaningless rss_kb. Guard explicitly.
+        let raw = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        anyhow::ensure!(
+            raw > 0,
+            "sysconf(_SC_PAGESIZE) failed: {}",
+            std::io::Error::last_os_error()
+        );
+        let page_size = raw as u64;
         Ok(resident_pages * page_size / 1024)
     }
     #[cfg(not(target_os = "linux"))]
