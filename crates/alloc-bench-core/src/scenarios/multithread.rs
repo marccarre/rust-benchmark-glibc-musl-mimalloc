@@ -103,8 +103,11 @@ impl Scenario for Multithread {
                 }));
             }
             for h in handles {
-                if let Ok(bag) = h.join() {
-                    all.push(bag);
+                // CR-02: propagate worker panics so the harness fails loudly
+                // instead of recording bogus throughput from a partial run.
+                match h.join() {
+                    Ok(bag) => all.push(bag),
+                    Err(payload) => std::panic::resume_unwind(payload),
                 }
             }
         });
