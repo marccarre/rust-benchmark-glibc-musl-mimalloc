@@ -41,6 +41,13 @@ pub struct Build {
 pub struct ScenarioInfo {
     pub name: String,
     pub config: serde_json::Value,
+    /// Phase-2 additive field (CONTEXT.md D-CONTEXT). Optional throughput unit
+    /// label consumed by the Phase-4 aggregator. `None` (default) → ticks/s;
+    /// `Some("iters_per_s")` for channel scenarios; `Some("req_per_s")` for
+    /// the upcoming Phase-2 web scenario. Skipped when serializing if `None`,
+    /// so existing Phase-1 multithread JSON shapes remain byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

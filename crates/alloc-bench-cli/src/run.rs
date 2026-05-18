@@ -91,6 +91,9 @@ pub fn run_multithread(
     let scenario_info = ScenarioInfo {
         name: "multithread".to_string(),
         config: alloc_bench_core::Scenario::config_json(&scenario),
+        // Phase-2 additive schema field. `None` is skipped on serialize so
+        // the multithread JSON shape stays byte-identical to Phase 1.
+        unit: None,
     };
 
     let build = Build {
