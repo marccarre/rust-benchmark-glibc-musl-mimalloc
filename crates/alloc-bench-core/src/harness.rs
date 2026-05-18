@@ -72,6 +72,15 @@ pub fn run<S: Scenario, F: Fn() -> serde_json::Value>(
     if cfg.warmup < Duration::from_secs(1) {
         bail!("warm-up must be >= 1s; allocator caches need to populate (see PITFALLS.md §1.5)");
     }
+    // WR-09 (Phase-2 review): if cfg.measure < 1s the while-loop below
+    // either runs zero iterations (samples_count = 0) or completes so
+    // few that `samples_count / measurement_s` divides by ~0, producing
+    // NaN ticks_per_s — which then either serialises as null or panics
+    // serde_json depending on the encoder. Reject up front so the
+    // failure mode is a clean error rather than a non-finite metric.
+    if cfg.measure < Duration::from_secs(1) {
+        bail!("measure must be >= 1s; otherwise ticks_per_s is undefined");
+    }
 
     scenario.setup()?;
 
@@ -186,6 +195,23 @@ mod tests {
         let err = run(&mut s, &cfg, || serde_json::json!({"kind":"system"})).unwrap_err();
         assert!(
             err.to_string().contains("warm-up must be >= 1s"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// WR-09 (Phase-2 review): measure < 1s would compute NaN ticks_per_s.
+    /// Reject the config up front.
+    #[test]
+    fn measure_too_short_returns_error() {
+        let mut s = DummyScenario;
+        let cfg = HarnessConfig {
+            warmup: Duration::from_secs(1),
+            measure: Duration::from_millis(500),
+            seed: 0,
+        };
+        let err = run(&mut s, &cfg, || serde_json::json!({"kind":"system"})).unwrap_err();
+        assert!(
+            err.to_string().contains("measure must be >= 1s"),
             "unexpected error: {err}"
         );
     }
