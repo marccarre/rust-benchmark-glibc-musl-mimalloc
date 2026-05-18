@@ -30,13 +30,36 @@ fn read_os_version() -> String {
 }
 
 fn read_cpu_model() -> String {
+    // WR-08: '/proc/cpuinfo' uses 'model name' on x86 but 'Processor' /
+    // 'CPU implementer' / 'CPU part' / 'Model' on aarch64 and other
+    // architectures. Fall back through the most-specific keys first so we
+    // get a useful label on every Linux arch the project supports
+    // (including aarch64-linux-* per STACK.md).
     #[cfg(target_os = "linux")]
     if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
-        for line in content.lines() {
-            if line.starts_with("model name") {
-                if let Some(val) = line.splitn(2, ':').nth(1) {
-                    return val.trim().to_string();
+        // Order matters: 'model name' is x86-specific; 'Model' / 'Processor'
+        // appear on aarch64; 'CPU implementer' is the last-resort vendor ID.
+        const KEYS: &[&str] = &["model name", "Model", "Processor", "CPU implementer"];
+        for key in KEYS {
+            for line in content.lines() {
+                if let Some((k, v)) = line.split_once(':') {
+                    if k.trim() == *key {
+                        let val = v.trim();
+                        if !val.is_empty() {
+                            return val.to_string();
+                        }
+                    }
                 }
+            }
+        }
+        // Embedded boards sometimes only populate /sys for the device tree.
+        if let Ok(compat) =
+            std::fs::read_to_string("/sys/devices/system/cpu/cpu0/of_node/compatible")
+        {
+            // The file is a NUL-separated list of strings; first entry is
+            // the most-specific compatible string.
+            if let Some(first) = compat.split('\0').find(|s| !s.is_empty()) {
+                return first.trim().to_string();
             }
         }
     }
