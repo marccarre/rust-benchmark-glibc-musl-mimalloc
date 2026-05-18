@@ -216,7 +216,16 @@ impl Scenario for Mpsc {
     }
 
     fn allocations_per_tick(&self) -> u64 {
-        self.cfg.objects_per_tick
+        // CR-02 (Phase-2 review): per-tick work is split across producers
+        // via integer division (`per_producer = objects_per_tick /
+        // producers`). The *actual* allocations performed per tick are
+        // `producers * per_producer`, not `objects_per_tick`. When
+        // `objects_per_tick` is not an exact multiple of `producers`, the
+        // truncated remainder must NOT be counted — otherwise allocator
+        // throughput derived as `ticks_per_s * allocations_per_tick`
+        // over-reports by up to `producers - 1` allocations per tick.
+        let per_producer = self.cfg.objects_per_tick / self.cfg.producers as u64;
+        per_producer.saturating_mul(self.cfg.producers as u64)
     }
 
     fn tick(&mut self) -> Box<dyn SinkValue> {
@@ -225,7 +234,8 @@ impl Scenario for Mpsc {
 
         // Spread `objects_per_tick` across producers. Integer division rounds
         // down so total may be slightly < objects_per_tick when the count
-        // doesn't divide evenly — acceptable for benchmark purposes.
+        // doesn't divide evenly — `allocations_per_tick()` reports the
+        // truncated total (`producers * per_producer`), not the input.
         let per_producer = cfg.objects_per_tick / cfg.producers as u64;
 
         std::thread::scope(|scope| {
@@ -299,7 +309,12 @@ impl Scenario for Mpmc {
     }
 
     fn allocations_per_tick(&self) -> u64 {
-        self.cfg.objects_per_tick
+        // CR-02 (Phase-2 review): same per-producer truncation as Mpsc.
+        // Reports `producers * per_producer`, not `objects_per_tick`,
+        // so the derived allocation rate is faithful when
+        // `objects_per_tick % producers != 0`.
+        let per_producer = self.cfg.objects_per_tick / self.cfg.producers as u64;
+        per_producer.saturating_mul(self.cfg.producers as u64)
     }
 
     fn tick(&mut self) -> Box<dyn SinkValue> {
@@ -467,5 +482,46 @@ mod tests {
         let c = cfg(2, 2, 8).validated().unwrap();
         let mut s = Mpmc::new(c);
         let _ = s.tick();
+    }
+
+    /// CR-02: when `objects_per_tick % producers != 0`, the per-tick work is
+    /// `producers * (objects_per_tick / producers)` (integer truncation).
+    /// `allocations_per_tick()` MUST report this truncated total so the
+    /// derived allocator throughput is faithful — over-reporting by the
+    /// truncated remainder propagates through the Phase-4 aggregator as a
+    /// wrong allocs/s number.
+    #[test]
+    fn mpsc_allocations_per_tick_accounts_for_truncation() {
+        // 10 / 3 = 3 per producer × 3 producers = 9 actual allocs (NOT 10).
+        let mut c = cfg(3, 1, 8);
+        c.objects_per_tick = 10;
+        let s = Mpsc::new(c.validated().unwrap());
+        assert_eq!(s.allocations_per_tick(), 9);
+    }
+
+    #[test]
+    fn mpsc_allocations_per_tick_exact_divisor() {
+        // Even split: 12 / 4 = 3 per producer × 4 = 12 (no truncation).
+        let mut c = cfg(4, 1, 8);
+        c.objects_per_tick = 12;
+        let s = Mpsc::new(c.validated().unwrap());
+        assert_eq!(s.allocations_per_tick(), 12);
+    }
+
+    #[test]
+    fn mpmc_allocations_per_tick_accounts_for_truncation() {
+        // Same arithmetic for MPMC: 7 / 3 = 2 per producer × 3 = 6 (NOT 7).
+        let mut c = cfg(3, 2, 8);
+        c.objects_per_tick = 7;
+        let s = Mpmc::new(c.validated().unwrap());
+        assert_eq!(s.allocations_per_tick(), 6);
+    }
+
+    #[test]
+    fn mpmc_allocations_per_tick_exact_divisor() {
+        let mut c = cfg(4, 2, 8);
+        c.objects_per_tick = 16;
+        let s = Mpmc::new(c.validated().unwrap());
+        assert_eq!(s.allocations_per_tick(), 16);
     }
 }
