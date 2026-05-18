@@ -83,7 +83,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-03-PLAN.md — Justfile recipes (build/run/bench-cell/bench-all/bench-all-smoke/bench-host/dive-check/dive-check-all/clean-images)
+- [x] 03-03-PLAN.md — Justfile recipes (build/run/bench-cell/bench-all/bench-all-smoke/bench-host/dive-check/dive-check-all/clean-images)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -134,6 +134,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Foundation MVP Slice | 2/2 | Complete   | 2026-05-18 |
 | 2. Scenario Fan-Out | 3/3 | Complete   | 2026-05-18 |
-| 3. Docker Matrix & Local Orchestration | 2/5 | In Progress|  |
+| 3. Docker Matrix & Local Orchestration | 3/5 | In Progress|  |
 | 4. Aggregator & Dashboard | 0/TBD | Not started | - |
 | 5. CI, Image-Size Gate & Public Polish | 0/TBD | Not started | - |
