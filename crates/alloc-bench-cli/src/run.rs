@@ -9,8 +9,15 @@ use anyhow::{anyhow, Context, Result};
 use crate::{allocator, build_info};
 
 /// Parse human-readable durations like "5s", "500ms", "2m". No external dep.
+///
+/// WR-09: suffix-check ordering is correctness-critical. "ms" must be
+/// stripped before "s" because "5ms" ends with "s" too — reordering the
+/// branches would parse "5ms" as "5m → 300s". The unit tests below pin
+/// "5ms" and "5m" as adjacent assertions to fail fast on accidental
+/// reordering.
 pub fn parse_duration(s: &str) -> Result<Duration> {
     let s = s.trim();
+    // Order: longest/most-specific suffix first. Do not reorder.
     if let Some(rest) = s.strip_suffix("ms") {
         let n: u64 = rest
             .parse()
@@ -27,7 +34,13 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
         let n: u64 = rest
             .parse()
             .with_context(|| format!("invalid duration: {s}"))?;
-        return Ok(Duration::from_secs(n * 60));
+        // WR-09: n * 60 wrapped silently for very large n. Use checked_mul
+        // so a user passing e.g. '18446744073709551615m' gets a clear
+        // error instead of a tiny wrapped Duration.
+        let secs = n
+            .checked_mul(60)
+            .with_context(|| format!("duration too large: {s}"))?;
+        return Ok(Duration::from_secs(secs));
     }
     Err(anyhow!(
         "invalid duration: {s} (expected suffix ms|s|m, e.g. 5s)"
@@ -123,5 +136,27 @@ mod tests {
         assert_eq!(parse_duration("2m").unwrap(), Duration::from_secs(120));
         assert!(parse_duration("garbage").is_err());
         assert!(parse_duration("5x").is_err());
+    }
+
+    /// WR-09: pin the suffix-precedence invariant. If a maintainer reorders
+    /// the strip_suffix branches so "s" runs before "ms", "5ms" silently
+    /// becomes "5m → 300s" — this test catches that fast.
+    #[test]
+    fn parse_duration_ms_takes_precedence_over_m() {
+        assert_eq!(parse_duration("5ms").unwrap(), Duration::from_millis(5));
+        assert_eq!(parse_duration("5m").unwrap(), Duration::from_secs(300));
+        assert_ne!(parse_duration("5ms").unwrap(), parse_duration("5m").unwrap());
+    }
+
+    #[test]
+    fn parse_duration_minute_overflow_is_caught() {
+        // u64::MAX minutes would overflow when multiplied by 60. Without
+        // the checked_mul guard this returned a tiny wrapped Duration.
+        let s = format!("{}m", u64::MAX);
+        let err = parse_duration(&s).unwrap_err();
+        assert!(
+            err.to_string().contains("duration too large"),
+            "expected 'duration too large' error, got: {err}"
+        );
     }
 }
