@@ -72,12 +72,20 @@ fn print_version_banner() {
 }
 
 fn main() -> Result<()> {
-    print_version_banner();
+    // WR-07: defer the banner until *after* clap has parsed. Printing it
+    // before Cli::parse() leaked it onto stderr for `--help` and
+    // `--version` (clap exits inside parse() before we'd otherwise reach
+    // any subcommand dispatch), polluting CI logs and surprising scripts
+    // that pipe --version output. The runtime mutual-exclusion check
+    // stays before any benchmark work begins.
     allocator::assert_mutual_exclusion();
 
     let cli = Cli::parse();
     match cli.cmd {
-        None | Some(Cmd::Version) => Ok(()),
+        None | Some(Cmd::Version) => {
+            print_version_banner();
+            Ok(())
+        }
         Some(Cmd::Multithread {
             threads,
             objects,
@@ -88,16 +96,19 @@ fn main() -> Result<()> {
             duration,
             seed,
             output,
-        }) => run::run_multithread(
-            threads,
-            objects,
-            &size_dist,
-            size_min,
-            size_max,
-            &warmup,
-            &duration,
-            seed,
-            output.as_deref(),
-        ),
+        }) => {
+            print_version_banner();
+            run::run_multithread(
+                threads,
+                objects,
+                &size_dist,
+                size_min,
+                size_max,
+                &warmup,
+                &duration,
+                seed,
+                output.as_deref(),
+            )
+        }
     }
 }
