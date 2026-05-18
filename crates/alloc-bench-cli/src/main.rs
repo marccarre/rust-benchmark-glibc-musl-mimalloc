@@ -321,14 +321,7 @@ fn main() -> Result<()> {
             output,
         }) => {
             print_version_banner();
-            run::run_mem_bound(
-                &mode,
-                size,
-                &warmup,
-                &duration,
-                seed,
-                output.as_deref(),
-            )
+            run::run_mem_bound(&mode, size, &warmup, &duration, seed, output.as_deref())
         }
         Some(Cmd::ReallocStorm {
             target_size,
@@ -338,13 +331,7 @@ fn main() -> Result<()> {
             output,
         }) => {
             print_version_banner();
-            run::run_realloc_storm(
-                target_size,
-                &warmup,
-                &duration,
-                seed,
-                output.as_deref(),
-            )
+            run::run_realloc_storm(target_size, &warmup, &duration, seed, output.as_deref())
         }
     }
 }
