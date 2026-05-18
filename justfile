@@ -120,3 +120,168 @@ clean-images:
     set -uo pipefail
     docker images --filter "reference=alloc-bench:*" --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}' \
         | xargs -r docker rmi -f
+
+# The 18-cell hard-coded valid (env, alloc) tuple list (D-01, D-04). Cross-libc
+# combos (mallocng on glibc, ptmalloc on musl) are STRUCTURALLY ABSENT — D-04's
+# hard-skip is encoded by omission, not by runtime conditionals.
+#
+# Order: glibc family first (3 envs × 3 allocs = 9 cells), then musl family
+# (3 envs × 3 allocs = 9 cells). Grouping by libc lets the BuildKit cache reuse
+# the chef base layer across same-family cells.
+_matrix_cells := '''
+debian-slim ptmalloc
+debian-slim jemalloc
+debian-slim mimalloc
+distroless-cc ptmalloc
+distroless-cc jemalloc
+distroless-cc mimalloc
+wolfi ptmalloc
+wolfi jemalloc
+wolfi mimalloc
+alpine mallocng
+alpine jemalloc
+alpine mimalloc
+distroless-static mallocng
+distroless-static jemalloc
+distroless-static mimalloc
+scratch mallocng
+scratch jemalloc
+scratch mimalloc
+'''
+
+# Build + run the full 18-cell matrix sequentially (D-11), with per-cell error
+# capture so a single broken cell doesn't abort the rest (Discretion). Per-cell
+# logs are streamed with `[<alloc>-<env>]` prefix. Ends with the D-12 stdout
+# summary table: `alloc env status ticks_per_s_p50` (jq the multithread
+# scenario's metrics.ticks_per_s).
+#
+# Sequential is mandatory: parallel cells would multiplex allocators in the
+# same kernel page cache + thermal envelope, polluting measurements
+# (PITFALLS §1.3 spirit).
+bench-all:
+    #!/usr/bin/env bash
+    set -uo pipefail   # NOT -e — we want to continue past per-cell failures.
+    declare -a results=()
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        env="${line%% *}"
+        alloc="${line##* }"
+        echo
+        echo "════════════════════════════════════════════════════════"
+        echo "[${alloc}-${env}] starting"
+        echo "════════════════════════════════════════════════════════"
+        if just bench-cell "$env" "$alloc" 2>&1 | sed "s/^/[${alloc}-${env}] /"; then
+            results+=("OK   ${alloc}-${env}")
+        else
+            results+=("FAIL ${alloc}-${env}")
+        fi
+    done <<< '{{_matrix_cells}}'
+    echo
+    echo "════════════════════════════════════════════════════════"
+    echo "Matrix summary"
+    echo "════════════════════════════════════════════════════════"
+    printf '%s\n' "${results[@]}"
+    echo
+    echo "alloc env status ticks_per_s_p50"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        env="${line%% *}"
+        alloc="${line##* }"
+        json="results/${alloc}-${env}.json"
+        # Warning 9: an existing JSON file alone is not enough — check the run
+        # produced at least 8 of 10 expected scenarios (run-all emits 10 per
+        # crates/alloc-bench-cli/src/run.rs default_scenarios; allow ≤ 2
+        # per-scenario failures before marking the cell as FAIL).
+        if [[ -f "$json" ]] && [ "$(jq 'length' "$json")" -ge 8 ]; then
+            tps=$(jq -r '[.[] | select(.scenario.name=="multithread") | .metrics.ticks_per_s] | first // "n/a"' "$json")
+            echo "${alloc} ${env} ok ${tps}"
+        else
+            echo "${alloc} ${env} FAIL -"
+        fi
+    done <<< '{{_matrix_cells}}'
+
+# Smoke variant — same loop, same per-cell defaults. Phase-2 run-all already
+# defaults to warmup=1s + duration=5s per scenario (see
+# crates/alloc-bench-cli/src/run.rs default_scenarios), so this recipe's
+# contract is "the matrix runs end-to-end fast enough to iterate." BENCH_SMOKE
+# is reserved for future per-scenario flag overrides; today it has no effect
+# beyond signalling intent in shell history. (D-13 — see SUMMARY for rationale.)
+bench-all-smoke:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    BENCH_SMOKE=1 just bench-all
+
+# Native macOS / Linux host bench — libmalloc / ptmalloc baseline (D-18, D-19).
+# No Docker. .cargo/config.toml's `target-cpu=native` is honored automatically;
+# Cargo picks the host triple. Output is `results/host-system.json` (D-18
+# literal filename). Prints the host triple via `rustc -vV` for traceability.
+bench-host:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p results
+    cargo build --release -p alloc-bench-cli
+    target/release/alloc-bench-cli run-all --output results/host-system.json --seed 7
+    HOST=$(rustc -vV | awk '/^host:/ {print $2}')
+    echo "[host] target=$HOST"
+    echo "[host] wrote results/host-system.json"
+
+# dive image-efficiency check for one cell (D-14, DOCK-07). Falls back to the
+# dockerized `wagoodman/dive:latest` image if `dive` isn't on host PATH.
+# Warning 10: --platform linux/amd64 on the dockerized fallback mirrors the
+# build/run recipes — keeps everything coherent on Apple Silicon dev boxes.
+dive-check env alloc:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v dive >/dev/null 2>&1; then
+        dive --ci alloc-bench:{{alloc}}-{{env}} --ci-config .dive-ci
+    else
+        docker run --rm \
+            --platform linux/amd64 \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$(pwd)/.dive-ci:/.dive-ci:ro" \
+            wagoodman/dive:latest \
+            --ci alloc-bench:{{alloc}}-{{env}} --ci-config /.dive-ci
+    fi
+
+# Run dive against every image in the matrix. Per-cell error capture so a
+# single failing cell doesn't abort the rest of the gate.
+dive-check-all:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    declare -a results=()
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        env="${line%% *}"
+        alloc="${line##* }"
+        echo "[dive] ${alloc}-${env}"
+        if just dive-check "$env" "$alloc"; then
+            results+=("OK   ${alloc}-${env}")
+        else
+            results+=("FAIL ${alloc}-${env}")
+        fi
+    done <<< '{{_matrix_cells}}'
+    echo
+    echo "dive-check summary"
+    printf '%s\n' "${results[@]}"
+
+# Verify _matrix_cells has exactly 18 valid (env, alloc) tuples and contains
+# zero cross-libc combos (Warning 7 reconciliation — replaces the fragile
+# inline awk pipeline a verify block would otherwise need). Recipe-form is
+# cleaner because `just check-matrix` is callable both interactively and
+# from CI / pre-commit.
+check-matrix:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BODY=$(awk "/^_matrix_cells := '''$/{flag=1;next} /^'''$/{flag=0} flag" justfile)
+    VALID=$(printf "%s\n" "$BODY" | grep -cE '^(debian-slim|distroless-cc|wolfi|alpine|distroless-static|scratch) (ptmalloc|jemalloc|mimalloc|mallocng)$' || true)
+    if [ "$VALID" -ne 18 ]; then
+        echo "[ERR] _matrix_cells has $VALID valid tuples; expected 18" >&2
+        exit 1
+    fi
+    INVALID=$(printf "%s\n" "$BODY" | grep -E '^(debian-slim|distroless-cc|wolfi) mallocng$|^(alpine|distroless-static|scratch) ptmalloc$' || true)
+    if [ -n "$INVALID" ]; then
+        echo "[ERR] _matrix_cells contains forbidden cross-libc tuple(s):" >&2
+        echo "$INVALID" >&2
+        exit 1
+    fi
+    echo "[ok] _matrix_cells: 18 valid (env, alloc) tuples; zero cross-libc."
