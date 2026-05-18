@@ -21,6 +21,37 @@ pub trait Scenario {
     fn allocations_per_tick(&self) -> u64;
 }
 
+/// Allow `Box<dyn Scenario>` to be driven by the generic `run<S: Scenario>`
+/// signature. Phase-2 `run_all` (SCEN-11) builds a registry of
+/// `Box<dyn Scenario>` so adding a new scenario only touches the registry —
+/// it is the canonical Phase-2 dispatch shape per RESEARCH.md §Run-all.
+///
+/// Without this delegation impl, `&mut dyn Scenario` cannot satisfy
+/// `S: Scenario` (because `dyn Scenario: !Sized`); but `Box<dyn Scenario>`
+/// is `Sized`, so `Box<dyn Scenario>: Scenario` lets us pass
+/// `&mut boxed_scenario` (where `boxed_scenario: Box<dyn Scenario>`)
+/// straight to `run`.
+impl Scenario for Box<dyn Scenario> {
+    fn name(&self) -> &'static str {
+        (**self).name()
+    }
+    fn config_json(&self) -> serde_json::Value {
+        (**self).config_json()
+    }
+    fn setup(&mut self) -> anyhow::Result<()> {
+        (**self).setup()
+    }
+    fn tick(&mut self) -> Box<dyn SinkValue> {
+        (**self).tick()
+    }
+    fn teardown(&mut self) {
+        (**self).teardown()
+    }
+    fn allocations_per_tick(&self) -> u64 {
+        (**self).allocations_per_tick()
+    }
+}
+
 pub struct HarnessConfig {
     pub warmup: Duration,
     pub measure: Duration,
