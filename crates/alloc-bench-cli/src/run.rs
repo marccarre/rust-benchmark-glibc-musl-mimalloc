@@ -710,7 +710,12 @@ fn default_scenarios(seed: u64) -> Vec<(&'static str, Option<String>, ScenarioBu
 /// Extract a human-readable message from a panic payload. `panic::catch_unwind`
 /// returns `Err(Box<dyn Any + Send>)` whose payload is typically the panic
 /// argument: a `&'static str`, a `String`, or something else opaque.
-fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+///
+/// WR-07 (Phase-2 review): the parameter is `&(dyn Any + Send)` rather
+/// than `&Box<dyn Any + Send>` to avoid the `clippy::borrowed_box` smell
+/// — `&Box<T>` is almost always replaceable with `&T` and the call site
+/// just dereferences the `Box` via `&*panic` (or `panic.as_ref()`).
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&'static str>() {
         (*s).to_string()
     } else if let Some(s) = payload.downcast_ref::<String>() {
@@ -816,7 +821,9 @@ pub fn run_all(output: Option<&str>, seed: u64) -> Result<()> {
                 runs.push(degenerate_failure_run(name, e.to_string())?);
             }
             Err(panic) => {
-                let msg = panic_message(&panic);
+                // WR-07 (Phase-2 review): pass the unboxed dyn Any directly
+                // by deref'ing the Box.
+                let msg = panic_message(&*panic);
                 eprintln!("[run-all]   {name}: panicked — {msg}");
                 runs.push(degenerate_failure_run(name, msg)?);
             }
