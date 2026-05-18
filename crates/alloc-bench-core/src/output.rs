@@ -176,6 +176,105 @@ mod tests {
         );
     }
 
+    /// WR-10 (Phase-2 review): canonical-shape snapshot. Enumerates every
+    /// top-level key the schema is allowed to emit at SCHEMA_VERSION=1 so
+    /// a future PR that adds a NEW required field (no
+    /// `skip_serializing_if`) fails this test — forcing the author to
+    /// either bump SCHEMA_VERSION in the same change or revert the field.
+    /// Phase-1 byte-equivalence is asserted by the
+    /// `run_with_none_status_omits_status_and_error_keys` test above;
+    /// this one pins the additive-shape gate at the type level.
+    ///
+    /// If you intentionally bump SCHEMA_VERSION, update both the constant
+    /// (output.rs:3) AND the `expected` slice below in the same commit.
+    #[test]
+    fn run_canonical_shape_snapshot() {
+        let run = Run {
+            schema_version: SCHEMA_VERSION,
+            run_id: "stub".to_string(),
+            env: Env {
+                os: "x".into(),
+                os_version: "y".into(),
+                docker_image: None,
+                cpu_model: "z".into(),
+                cpu_count: 1,
+                memory_total_kb: 1,
+            },
+            build: Build {
+                allocator: "system".into(),
+                rustc_version: "x".into(),
+                target_triple: "x".into(),
+                host_triple: "x".into(),
+                profile: "x".into(),
+                git_sha: "x".into(),
+                git_dirty: false,
+                build_timestamp: "x".into(),
+                rustflags: "x".into(),
+            },
+            scenario: ScenarioInfo {
+                name: "stub".into(),
+                config: serde_json::json!({}),
+                unit: Some("req_per_s".into()),
+            },
+            harness: HarnessInfo {
+                warmup_duration_s: 0.0,
+                measurement_duration_s: 0.0,
+                samples_count: 0,
+            },
+            metrics: Metrics {
+                ticks_per_s: 0.0,
+                allocations_per_tick: 0,
+                tick_latency_ns: LatencyNs {
+                    p50: 0,
+                    p95: 0,
+                    p99: 0,
+                    p999: 0,
+                    max: 0,
+                },
+                peak_rss_kb: 0,
+                rss_growth_samples: vec![],
+                rusage: Rusage {
+                    user_time_s: 0.0,
+                    sys_time_s: 0.0,
+                    minor_faults: 0,
+                    major_faults: 0,
+                    voluntary_csw: 0,
+                    involuntary_csw: 0,
+                    peak_rss_kb: 0,
+                },
+                allocator_stats: serde_json::json!({}),
+            },
+            // status: Some so the canonical-success run-all shape is
+            // exercised; error stays None so it's still skipped.
+            status: Some("success".into()),
+            error: None,
+        };
+        let v: serde_json::Value = serde_json::to_value(&run).expect("serialize");
+        let obj = v.as_object().expect("Run must be a JSON object");
+        let mut keys: Vec<&str> = obj.keys().map(|s| s.as_str()).collect();
+        keys.sort_unstable();
+
+        // Canonical SCHEMA_VERSION=1 top-level keys for a successful
+        // run-all entry. `error` is absent because it's None above
+        // (skip_serializing_if drops it). If you add a NEW top-level
+        // field to `Run`, update this slice AND bump SCHEMA_VERSION in
+        // output.rs:3 in the SAME commit.
+        let expected: &[&str] = &[
+            "build",
+            "env",
+            "harness",
+            "metrics",
+            "run_id",
+            "scenario",
+            "schema_version",
+            "status",
+        ];
+        assert_eq!(
+            keys, expected,
+            "Run JSON shape changed at SCHEMA_VERSION=1; bump SCHEMA_VERSION + update this test in lockstep"
+        );
+    }
+
     /// Conversely, when `status: Some(_)` and `error: Some(_)` are set,
     /// both keys MUST appear (the run-all path depends on this).
     #[test]
