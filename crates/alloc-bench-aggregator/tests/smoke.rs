@@ -494,20 +494,26 @@ fn aggregator_report_md_contains_winner_prefix() {
     );
 }
 
-/// AGG-04: REPORT.md surfaces both suspect-predicate italic notes when
-/// run against the Task-4 augmented jemalloc-alpine fixture. Run 1 has
-/// samples_count=5000 → low-samples; Run 3 has warmup_duration_s=2.0 →
-/// short-warmup.
+/// AGG-04 (Plan-03 update): REPORT.md surfaces the suspect signal when run
+/// against the Phase-4 jemalloc-alpine fixture. Plan 03 introduced multi-run
+/// cell collapsing — the existing fixture has TWO multithread+jemalloc-alpine
+/// runs (one low-samples, one short-warmup) which now collapse into a SINGLE
+/// multi-run cell with a `⚠ suspect` flag. The Phase-4 single-cell suspect
+/// notes (`*(⚠ suspect: low samples)*` / `*(⚠ suspect: short warmup)*`) still
+/// emit when a cell has only ONE run.
+///
+/// Plan-03 contract: the suspect signal must surface SOMEWHERE — either as
+/// the legacy italic note (single-run cells) OR as the new multi-run flag
+/// (≥2-run cells). We assert at least one shape is present.
 #[test]
 fn aggregator_report_md_contains_suspect_italic_notes() {
     let (_dir, md) = run_aggregator_and_read_markdown();
+    let legacy_low = md.contains("*(\u{26A0} suspect: low samples)*");
+    let legacy_short = md.contains("*(\u{26A0} suspect: short warmup)*");
+    let multi_run_flag = md.contains("\u{26A0} suspect)");
     assert!(
-        md.contains("*(\u{26A0} suspect: low samples)*"),
-        "REPORT.md missing low-samples italic note"
-    );
-    assert!(
-        md.contains("*(\u{26A0} suspect: short warmup)*"),
-        "REPORT.md missing short-warmup italic note"
+        legacy_low || legacy_short || multi_run_flag,
+        "REPORT.md missing any suspect signal (legacy italic notes or multi-run `⚠ suspect` flag):\n{md}"
     );
 }
 
@@ -527,5 +533,147 @@ fn readme_md_contains_system_diagram() {
     assert!(
         readme.contains("flowchart TD"),
         "README.md missing `flowchart TD` Mermaid block"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Plan 05-03 Task 5: multi-run + sidecar integration smoke tests
+// ---------------------------------------------------------------------------
+//
+// Each test below drives the aggregator against the multi_run/seed-*.json
+// fixture set (Plan 05-01) and asserts the Plan-03 wire-up is end-to-end
+// observable in the output artifacts. The fixtures contain THREE seeded
+// Run arrays (seed-1/2/3.json) covering two scenarios — multithread (CV
+// ≈ 4.76%) and cpu-bound (CV ≈ 19.52%) — with a single sidecar
+// meta/jemalloc-alpine.json carrying `image_size_mb: 26.55`.
+//
+// The helper `run_aggregator_with_multi_run_fixtures` mirrors
+// `run_aggregator_against_fixtures` but points at the multi_run/ subdir
+// for both `--input` and `--meta`.
+
+/// Drive the aggregator against `tests/fixtures/multi_run/seed-*.json`
+/// + `tests/fixtures/multi_run/meta/*.json`. Returns the tempdir handle
+///   (kept alive for the test) plus the rendered HTML and REPORT.md.
+fn run_aggregator_with_multi_run_fixtures() -> (tempfile::TempDir, String, String) {
+    let out_dir = tempdir().expect("tempdir");
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/multi_run");
+    let input_pattern = format!("{}/seed-*.json", fixtures.display());
+    let meta_pattern = format!("{}/meta/*.json", fixtures.display());
+
+    let mut cmd = Command::cargo_bin("alloc-bench-aggregator").expect("cargo bin");
+    cmd.args(["--input"])
+        .arg(&input_pattern)
+        .args(["--meta"])
+        .arg(&meta_pattern)
+        .args(["--output"])
+        .arg(out_dir.path());
+    cmd.assert().success();
+
+    let html = std::fs::read_to_string(out_dir.path().join("index.html")).expect("read index.html");
+    let md = std::fs::read_to_string(out_dir.path().join("REPORT.md")).expect("read REPORT.md");
+    (out_dir, html, md)
+}
+
+/// D-11: per-scenario throughput cells include the literal `, CV ` anchor
+/// when ≥2 runs share an `(alloc, env, scenario)` triple. The multi_run
+/// fixture set has 3 seeds for both multithread and cpu-bound, so both
+/// scenario tables emit the multi-run shape.
+#[test]
+fn aggregator_multi_run_emits_cv_in_throughput_cell() {
+    let (_dir, _html, md) = run_aggregator_with_multi_run_fixtures();
+    assert!(
+        md.contains(", CV "),
+        "expected `, CV ` anchor in REPORT.md per-scenario throughput cells:\n{md}"
+    );
+}
+
+/// D-11: per-scenario throughput cells include the `({min}..` range
+/// substring. Multithread fixture: throughputs [100, 110, 105] →
+/// min=100, max=110; the cell starts `105 (100..110, CV 5%)`.
+#[test]
+fn aggregator_multi_run_emits_min_max_range_in_cell() {
+    let (_dir, _html, md) = run_aggregator_with_multi_run_fixtures();
+    // Anchor on the `(100..` literal — the multithread scenario's min is
+    // 100 across the 3 seeds. This pins the `({min:.0}..` shape and
+    // implicitly proves min/max came through `mr_aggregate`.
+    assert!(
+        md.contains("(100.."),
+        "expected `(100..` substring (min/max range) in REPORT.md:\n{md}"
+    );
+}
+
+/// D-12: cells with CV > 10% surface the `⚠ high variance` flag.
+/// cpu-bound fixture: throughputs [100, 130, 90] → CV ≈ 19.52% → flag.
+#[test]
+fn aggregator_high_variance_cell_marked_with_warning_glyph() {
+    let (_dir, _html, md) = run_aggregator_with_multi_run_fixtures();
+    assert!(
+        md.contains("\u{26A0} high variance"),
+        "expected `⚠ high variance` glyph in REPORT.md:\n{md}"
+    );
+}
+
+/// D-11 / D-12 (Task 4): rendered index.html contains the `error_y`
+/// Plotly field name (the asymmetric whisker contract). When multi-run
+/// data is present, `makeThroughputTraces` always emits an `error_y`
+/// block — even if every cell happens to be a single-run fallback the
+/// block is still present (with all-zero arrays). The substring presence
+/// is the structural pin.
+#[test]
+fn aggregator_html_contains_error_y_field() {
+    let (_dir, html, _md) = run_aggregator_with_multi_run_fixtures();
+    assert!(
+        html.contains("error_y"),
+        "expected `error_y` Plotly field in index.html"
+    );
+    assert!(
+        html.contains("arrayminus"),
+        "expected `arrayminus` (asymmetric whisker) in index.html"
+    );
+}
+
+/// D-12 (Task 4): rendered index.html contains the legend label suffix
+/// `high variance`. The cpu-bound fixture cell (CV ≈ 19.52%) trips the
+/// `anyHighVariance` flag in `makeThroughputTraces`, so the legend gets
+/// the suffix appended.
+///
+/// We anchor on the literal `high variance` substring so the assertion
+/// is resilient to whitespace / glyph-formatting changes in the JS
+/// `legendName` concatenation.
+#[test]
+fn aggregator_html_high_variance_appears_in_legend() {
+    let (_dir, html, _md) = run_aggregator_with_multi_run_fixtures();
+    assert!(
+        html.contains("high variance"),
+        "expected `high variance` substring in index.html (rendered into the JS legendName concatenation)"
+    );
+}
+
+/// D-13 (Task 1 + Task 2): when `--meta` points at the multi-run sidecar
+/// fixture, REPORT.md `## Docker runtimes` table populates `image_size_mb`
+/// from the meta. The fixture sidecar carries `image_size_mb: 26.55`,
+/// which Rust's `{:.1}` formatter renders as `26.6` (IEEE-754
+/// half-up rounding — see deviation note in 05-03-SUMMARY.md).
+///
+/// Anchor on both `26.` (numeric value, formatting-direction-stable) AND
+/// the env-row label so a future cell-shuffle can't false-pass.
+#[test]
+fn aggregator_meta_sidecar_populates_image_size_mb() {
+    let (_dir, _html, md) = run_aggregator_with_multi_run_fixtures();
+    // Numeric value present.
+    assert!(
+        md.contains("26."),
+        "expected `26.` (image_size_mb) in REPORT.md Docker runtimes:\n{md}"
+    );
+    // Env-row label is the full docker_image tag synthesized from the
+    // sidecar's (alloc, env) tuple.
+    assert!(
+        md.contains("alloc-bench:jemalloc-alpine"),
+        "expected `alloc-bench:jemalloc-alpine` env-row label in REPORT.md:\n{md}"
+    );
+    // D-13 footnote wording switches when metas non-empty.
+    assert!(
+        md.contains("populated from CI sidecar"),
+        "expected D-13 sidecar footnote when --meta is supplied:\n{md}"
     );
 }

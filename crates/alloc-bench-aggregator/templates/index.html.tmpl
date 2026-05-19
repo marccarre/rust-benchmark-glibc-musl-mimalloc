@@ -270,6 +270,14 @@ const ALLOCATORS = { allocators_json | unescaped };
 // bootstrap can decide per-option whether to render the `⚠ ` prefix.
 const SUSPECT_PAIRS = new Set({ suspect_pairs_json | unescaped });
 
+// Plan 03 D-11 / D-12 — multi-run statistics keyed by `\{alloc}|\{env}|\{scenario}`.
+// Server-side BTreeMap keyed by 3-tuple → alphabetical-iteration JSON,
+// flattened to the `alloc|env|scenario` string for O(1) JS lookup.
+// Each value is a `\{ n, mean, median, min, max, stddev, cv_pct }` shape.
+// Empty `\{}` when no `(alloc, env, scenario)` triple has ≥2 runs (single-
+// run-per-cell fallback path emits no error_y whiskers + no ⚠ flag).
+const MULTI_RUN_GROUPED = { multi_run_grouped_json | unescaped };
+
 function envLabel(run) \{ return run.env.docker_image || 'host'; }
 function isSuspect(run) \{ return run.harness.samples_count < 10000 || run.harness.warmup_duration_s < 5.0; }
 // `·` keeps the file pure ASCII — equivalent to U+00B7 MIDDLE DOT
@@ -422,15 +430,55 @@ function makeThroughputTraces(filtered) \{
     for (const r of allocRuns) \{
       if (isSuspect(r)) \{ anySuspect = true; break; }
     }
-    const y = scenarios.map(s => \{
+    // D-11 / D-12 (Plan 03 Task 4): when MULTI_RUN_GROUPED has the cell,
+    // use median for y and asymmetric error_y from min/max; otherwise
+    // fall back to the single-run ticks_per_s (Phase-4 contract). Build
+    // the y / yMinus / yPlus arrays scenario-by-scenario.
+    const yMedians = [];
+    const yMinus = [];
+    const yPlus = [];
+    let anyHighVariance = false;
+    for (const s of scenarios) \{
       const hit = allocRuns.find(r => r.scenario.name === s);
-      return hit ? hit.metrics.ticks_per_s : null;
-    });
+      if (!hit) \{
+        yMedians.push(null);
+        yMinus.push(0);
+        yPlus.push(0);
+        continue;
+      }
+      const key = hit.build.allocator + '|' + envLabel(hit) + '|' + hit.scenario.name;
+      const mr = MULTI_RUN_GROUPED[key];
+      if (mr) \{
+        yMedians.push(mr.median);
+        yMinus.push(mr.median - mr.min);
+        yPlus.push(mr.max - mr.median);
+        if (mr.cv_pct !== null && mr.cv_pct !== undefined && mr.cv_pct > 10) \{
+          anyHighVariance = true;
+        }
+      } else \{
+        yMedians.push(hit.metrics.ticks_per_s);
+        yMinus.push(0);
+        yPlus.push(0);
+      }
+    }
+    const legendName = alloc
+      + (anySuspect ? ' ⚠ suspect' : '')
+      + (anyHighVariance ? ' ⚠ high variance' : '');
     traces.push(\{
       type: 'bar',
-      name: alloc + (anySuspect ? ' ⚠' : ''),
+      name: legendName,
       x: scenarios,
-      y: y,
+      y: yMedians,
+      error_y: \{
+        type: 'data',
+        symmetric: false,
+        array: yPlus,
+        arrayminus: yMinus,
+        visible: true,
+        color: '#1F2328',
+        thickness: 1.0,
+        width: 4,
+      },
       marker: \{ color: ALLOC_COLORS[alloc] || '#888' },
     });
   }

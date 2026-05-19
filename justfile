@@ -359,13 +359,17 @@ ci-validate:
     cargo clippy --workspace --all-targets -- -D warnings
     just dce-check system
 
-# STUB — Plan 03 implements the body. Phase 5 D-13 / RESEARCH §Pattern 4
-# (the meta.json merge step uses the `--meta` flag added by Plan 03's
-# main.rs extension). The stub exists so Plan 02's bench.yml workflow
-# has a recipe to call; Plan 03 replaces the body with the real
-# aggregator invocation.
+# CI variant of aggregate — also picks up sidecar meta.json files written
+# by ci-bench-cell (Phase 5 D-13). Used by the GHA aggregate job.
+#
+# The `--meta "meta/*.json"` flag is what differentiates this from the
+# Phase-4 `just aggregate` recipe: when CI populates the sidecar files,
+# the aggregator joins them on `(alloc, env)` to backfill `image_size_mb`
+# in REPORT.md `## Docker runtimes`. Local `just aggregate` invocations
+# without sidecars continue to render em-dash placeholders byte-stably.
 #
 # Usage:
-#   just ci-aggregate                         # exits non-zero with stderr message until Plan 03 lands
+#   just ci-aggregate                         # CI mode — reads results/ + meta/
 ci-aggregate:
-    @echo "ci-aggregate: Plan 03 implements this recipe" >&2 && exit 1
+    cargo run --release -p alloc-bench-aggregator -- \
+        --input "results/*.json" --meta "meta/*.json" --output report/
