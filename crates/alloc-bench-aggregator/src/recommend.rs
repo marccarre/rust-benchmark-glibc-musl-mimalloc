@@ -106,7 +106,13 @@ pub fn recommendations(runs: &[Run]) -> Vec<Recommendation> {
 /// allocator was measured on, plus the per-scenario throughput map (used
 /// to pick the "most representative" scenario name for the rationale
 /// string when a class has multiple scenarios — channel-heavy).
-struct AllocStats<'a> {
+///
+/// WR-02 (Phase-04 review): owned-only, lifetime-free. Earlier revs
+/// carried a vestigial `'a` parameter + `PhantomData<&'a Run>` field,
+/// justified by a doc comment claiming the `&str` keys borrowed from
+/// `class.scenarios()` — but the keys are `&'static str`, which has
+/// nothing to do with any caller-provided lifetime.
+struct AllocStats {
     allocator: String,
     score: f64,
     /// scenario_name → mean throughput on that scenario. Only contains
@@ -115,9 +121,6 @@ struct AllocStats<'a> {
     per_scenario: BTreeMap<&'static str, f64>,
     /// Whether ANY of the contributing runs is suspect per `is_suspect`.
     any_suspect: bool,
-    /// Phantom for the lifetime so `&str` keys borrow from the static
-    /// `class.scenarios()` slice rather than from each `Run`.
-    _runs_lifetime: std::marker::PhantomData<&'a Run>,
 }
 
 fn recommend_for_class(class: WorkloadClass, runs: &[Run]) -> Recommendation {
@@ -180,7 +183,6 @@ fn recommend_for_class(class: WorkloadClass, runs: &[Run]) -> Recommendation {
                 score,
                 per_scenario,
                 any_suspect,
-                _runs_lifetime: std::marker::PhantomData,
             }
         })
         // Drop allocators whose runs were ALL outside `scenarios` (none
