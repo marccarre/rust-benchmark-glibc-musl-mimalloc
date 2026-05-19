@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation MVP Slice** - Workspace, allocator features, harness, first scenario, results.json — one allocator end-to-end (completed 2026-05-18)
 - [x] **Phase 2: Scenario Fan-Out** - Remaining ten benchmark scenarios on top of the harness contract (completed 2026-05-18)
 - [ ] **Phase 3: Docker Matrix & Local Orchestration** - Six Dockerfiles, Justfile bench-all, NUMA/cgroup hardening
-- [ ] **Phase 4: Aggregator & Dashboard** - alloc-bench-aggregator, Plotly HTML, REPORT.md with Mermaid diagrams
+- [x] **Phase 4: Aggregator & Dashboard** - alloc-bench-aggregator, Plotly HTML, REPORT.md with Mermaid diagrams (completed 2026-05-19)
 - [ ] **Phase 5: CI, Image-Size Gate & Public Polish** - GitHub Actions matrix, Dive gate, README walkthrough, recommendations
 
 **Justification of phase shape:** The research-proposed 5-phase decomposition is preserved verbatim because it already matches coarse granularity (5 phases, each shippable in MVP mode) and because Phases 4 and 5 deliver independently verifiable artifacts (a working dashboard vs. a green CI matrix + public docs). Collapsing them would push 13 requirements into one phase — too coarse even for the coarse setting — and would block early review of the dashboard until CI is also green.
@@ -135,5 +135,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Foundation MVP Slice | 2/2 | Complete   | 2026-05-18 |
 | 2. Scenario Fan-Out | 3/3 | Complete   | 2026-05-18 |
 | 3. Docker Matrix & Local Orchestration | 3/5 | In Progress|  |
-| 4. Aggregator & Dashboard | 2/3 | In Progress|  |
+| 4. Aggregator & Dashboard | 3/3 | Complete   | 2026-05-19 |
 | 5. CI, Image-Size Gate & Public Polish | 0/TBD | Not started | - |
