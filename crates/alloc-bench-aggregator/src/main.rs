@@ -22,6 +22,7 @@ mod diagrams;
 mod html;
 mod loader;
 mod markdown;
+mod multi_run;
 mod recommend;
 
 use anyhow::{Context, Result};
