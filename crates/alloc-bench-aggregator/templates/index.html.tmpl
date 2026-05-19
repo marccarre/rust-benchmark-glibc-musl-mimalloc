@@ -154,6 +154,54 @@ section.diff-picker label \{
     grid-template-columns: 1fr 1fr;
   }
 }
+/* Plan 03 Task 4: per-scenario allocator report-mirror table.
+   Mirrors REPORT.md's bold-and-✓ winner contract via CSS variables
+   --color-winner-bg / --color-winner-text declared in :root. */
+.report-mirror \{
+  grid-column: 2 / -1;
+  margin: var(--space-2xl) var(--space-lg) var(--space-xl);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-dominant);
+}
+.report-mirror h2 \{
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-semibold);
+  margin: 0 0 var(--space-md) 0;
+}
+.report-mirror h3 \{
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  margin: var(--space-md) 0 var(--space-sm) 0;
+}
+.report-mirror table \{
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: var(--space-md);
+}
+.report-mirror th, .report-mirror td \{
+  border: 1px solid var(--color-border);
+  padding: var(--space-sm);
+  text-align: left;
+  font-size: var(--font-size-body);
+}
+.report-mirror th \{
+  background: var(--color-secondary);
+  font-weight: var(--font-weight-semibold);
+}
+.report-mirror tr.winner \{
+  background: var(--color-winner-bg);
+  color: var(--color-winner-text);
+}
+.report-mirror tr.winner td:first-child \{
+  font-weight: var(--font-weight-semibold);
+}
+.report-mirror .suspect-note \{
+  color: var(--color-destructive);
+  font-style: italic;
+  margin-left: var(--space-xs);
+}
 </style>
 </head>
 <body>
@@ -191,6 +239,10 @@ section.diff-picker label \{
     <select id="ab-b-alloc"></select>
     <select id="ab-b-env"></select>
     <div id="diff-banner" style="grid-column: 1 / -1; display:none; color: var(--color-destructive); margin-top: var(--space-sm);"></div>
+  </section>
+  <section class="report-mirror">
+    <h2>Per-scenario allocator comparison</h2>
+    <div id="report-mirror-tables"></div>
   </section>
 </div>
 <script>
@@ -565,6 +617,112 @@ function onAbChange() \{
   onFilterChange();
 }
 
+// --- Plan 03 Task 4: per-scenario report-mirror table ---
+//
+// Mirrors REPORT.md's bold-and-✓ winner contract in HTML. The table is a
+// static representation of ALL runs (not filtered by the sidebar) so the
+// HTML view stays consistent with the markdown report. DOM construction
+// uses textContent + document.createElement throughout — no innerHTML
+// concatenation with user data — so a Run with `<script>` in its
+// allocator name (already validated by serde, but defensive) cannot
+// inject anywhere on the page.
+function renderReportMirrorTable() \{
+  const root = document.querySelector('#report-mirror-tables');
+  if (!root) \{ return; }
+  // Clear any prior content (idempotent re-render is safe).
+  while (root.firstChild) \{ root.removeChild(root.firstChild); }
+
+  // Group RESULTS by scenario name; alphabetical iteration via sort().
+  const byScenario = \{};
+  for (const r of RESULTS) \{
+    const key = r.scenario.name;
+    if (!byScenario[key]) \{ byScenario[key] = []; }
+    byScenario[key].push(r);
+  }
+  const scenarioNames = Object.keys(byScenario).sort();
+
+  for (const scenario of scenarioNames) \{
+    const arr = byScenario[scenario];
+    // Find winner: max ticks_per_s. Tie-break: alphabetical via
+    // alloc·env ordering (matches REPORT.md's index-not-name approach).
+    const sortedAlpha = arr.slice().sort((a, b) => \{
+      const ka = a.build.allocator + '|' + envLabel(a);
+      const kb = b.build.allocator + '|' + envLabel(b);
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+    let winnerIdx = 0;
+    for (let i = 1; i < sortedAlpha.length; i++) \{
+      if (sortedAlpha[i].metrics.ticks_per_s > sortedAlpha[winnerIdx].metrics.ticks_per_s) \{
+        winnerIdx = i;
+      }
+    }
+
+    const heading = document.createElement('h3');
+    heading.textContent = scenario;
+    root.appendChild(heading);
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const label of ['allocator', 'throughput', 'p50', 'p95', 'p99', 'p999', 'peak RSS']) \{
+      const th = document.createElement('th');
+      th.textContent = label;
+      headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (let i = 0; i < sortedAlpha.length; i++) \{
+      const r = sortedAlpha[i];
+      const tr = document.createElement('tr');
+      if (i === winnerIdx) \{ tr.className = 'winner'; }
+
+      // Allocator cell — ✓ U+2713 prefix on the winner; matches
+      // REPORT.md's bold-and-✓-prefix contract.
+      const tdAlloc = document.createElement('td');
+      tdAlloc.textContent = (i === winnerIdx ? '\u\{2713} ' : '') + r.build.allocator;
+      tr.appendChild(tdAlloc);
+
+      // Throughput cell — value + optional <span class="suspect-note">.
+      const tdTput = document.createElement('td');
+      const unit = (r.scenario.unit || 'ticks/s');
+      tdTput.textContent = r.metrics.ticks_per_s.toFixed(1) + ' ' + unit;
+      const low = r.harness.samples_count < 10000;
+      const short = r.harness.warmup_duration_s < 5.0;
+      if (low || short) \{
+        const note = document.createElement('span');
+        note.className = 'suspect-note';
+        let reason;
+        if (low && short) \{ reason = '\u\{26A0} low samples, short warmup'; }
+        else if (low) \{ reason = '\u\{26A0} low samples'; }
+        else \{ reason = '\u\{26A0} short warmup'; }
+        note.textContent = reason;
+        tdTput.appendChild(note);
+      }
+      tr.appendChild(tdTput);
+
+      for (const v of [
+        r.metrics.tick_latency_ns.p50,
+        r.metrics.tick_latency_ns.p95,
+        r.metrics.tick_latency_ns.p99,
+        r.metrics.tick_latency_ns.p999,
+      ]) \{
+        const td = document.createElement('td');
+        td.textContent = v + ' ns';
+        tr.appendChild(td);
+      }
+      const tdRss = document.createElement('td');
+      tdRss.textContent = r.metrics.peak_rss_kb + ' kB';
+      tr.appendChild(tdRss);
+
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    root.appendChild(table);
+  }
+}
+
 // --- wire up listeners ---
 
 document.querySelectorAll('select[multiple]').forEach(el => \{
@@ -576,6 +734,7 @@ document.querySelectorAll('select[multiple]').forEach(el => \{
 
 bootstrap();
 onFilterChange();
+renderReportMirrorTable();
 </script>
 </body>
 </html>
