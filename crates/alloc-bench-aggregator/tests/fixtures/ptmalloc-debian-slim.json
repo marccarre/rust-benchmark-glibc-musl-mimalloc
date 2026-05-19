@@ -1,0 +1,120 @@
+[
+  {
+    "schema_version": 1,
+    "run_id": "2026-05-19T12:00:00Z-ptmalloc",
+    "env": {
+      "os": "linux",
+      "os_version": "12",
+      "docker_image": "alloc-bench:ptmalloc-debian-slim",
+      "cpu_model": "test-cpu",
+      "cpu_count": 4,
+      "memory_total_kb": 4194304
+    },
+    "build": {
+      "allocator": "ptmalloc",
+      "rustc_version": "1.83.0",
+      "target_triple": "x86_64-unknown-linux-gnu",
+      "host_triple": "x86_64-unknown-linux-gnu",
+      "profile": "release",
+      "git_sha": "0000000000000000000000000000000000000000",
+      "git_dirty": false,
+      "build_timestamp": "2026-05-19T12:00:00Z",
+      "rustflags": "-C target-cpu=x86-64-v3"
+    },
+    "scenario": {
+      "name": "multithread",
+      "config": { "threads": 4 }
+    },
+    "harness": {
+      "warmup_duration_s": 5.0,
+      "measurement_duration_s": 5.0,
+      "samples_count": 50000
+    },
+    "metrics": {
+      "ticks_per_s": 80.0,
+      "allocations_per_tick": 100,
+      "tick_latency_ns": {
+        "p50": 1000,
+        "p95": 2000,
+        "p99": 3000,
+        "p999": 5000,
+        "max": 10000
+      },
+      "peak_rss_kb": 500000,
+      "rss_growth_samples": [
+        { "t_s": 0, "rss_kb": 100000 },
+        { "t_s": 1, "rss_kb": 300000 }
+      ],
+      "rusage": {
+        "user_time_s": 4.0,
+        "sys_time_s": 1.0,
+        "minor_faults": 100,
+        "major_faults": 0,
+        "voluntary_csw": 50,
+        "involuntary_csw": 5,
+        "peak_rss_kb": 500000
+      },
+      "allocator_stats": { "kind": "system" }
+    },
+    "status": "success"
+  },
+  {
+    "schema_version": 1,
+    "run_id": "2026-05-19T12:00:01Z-ptmalloc",
+    "env": {
+      "os": "linux",
+      "os_version": "12",
+      "docker_image": "alloc-bench:ptmalloc-debian-slim",
+      "cpu_model": "test-cpu",
+      "cpu_count": 4,
+      "memory_total_kb": 4194304
+    },
+    "build": {
+      "allocator": "ptmalloc",
+      "rustc_version": "1.83.0",
+      "target_triple": "x86_64-unknown-linux-gnu",
+      "host_triple": "x86_64-unknown-linux-gnu",
+      "profile": "release",
+      "git_sha": "0000000000000000000000000000000000000000",
+      "git_dirty": false,
+      "build_timestamp": "2026-05-19T12:00:00Z",
+      "rustflags": "-C target-cpu=x86-64-v3"
+    },
+    "scenario": {
+      "name": "cpu-bound",
+      "config": { "threads": 4 }
+    },
+    "harness": {
+      "warmup_duration_s": 5.0,
+      "measurement_duration_s": 5.0,
+      "samples_count": 50000
+    },
+    "metrics": {
+      "ticks_per_s": 60.0,
+      "allocations_per_tick": 100,
+      "tick_latency_ns": {
+        "p50": 2000,
+        "p95": 4000,
+        "p99": 6000,
+        "p999": 9000,
+        "max": 15000
+      },
+      "peak_rss_kb": 700000,
+      "rss_growth_samples": [
+        { "t_s": 0, "rss_kb": 200000 },
+        { "t_s": 1, "rss_kb": 500000 }
+      ],
+      "rusage": {
+        "user_time_s": 4.5,
+        "sys_time_s": 1.5,
+        "minor_faults": 200,
+        "major_faults": 0,
+        "voluntary_csw": 60,
+        "involuntary_csw": 6,
+        "peak_rss_kb": 700000
+      },
+      "allocator_stats": { "kind": "system" }
+    },
+    "status": "success"
+  }
+]

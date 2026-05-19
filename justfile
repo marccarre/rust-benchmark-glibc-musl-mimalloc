@@ -285,3 +285,23 @@ check-matrix:
         exit 1
     fi
     echo "[ok] _matrix_cells: 18 valid (env, alloc) tuples; zero cross-libc."
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 4: Aggregator (ORCH-03, AGG-01).
+# ──────────────────────────────────────────────────────────────────────
+
+# Aggregate results/*.json into report/index.html + report/REPORT.md (D-18).
+# Reads results/*.json (the flat layout from Phase 3 D-03), emits both files
+# into report/. Pinned Plotly 2.35.3 CDN URL + SRI integrity hash baked into
+# index.html (RESEARCH §Pitfall 4). Suspect-run flagging at the
+# samples_count<10000 OR warmup_duration_s<5.0 thresholds (D-07) lands in
+# Plan 02; Plan 01 ships the end-to-end loop + skeleton template.
+aggregate:
+    cargo run --release -p alloc-bench-aggregator -- \
+        --input "results/*.json" --output report/
+
+# Smoke variant — runs the aggregator integration tests against committed
+# fixtures (D-17). Useful for prek pre-commit gate: catches a broken template
+# / loader regression before push.
+aggregate-smoke:
+    cargo test --release -p alloc-bench-aggregator --test smoke
