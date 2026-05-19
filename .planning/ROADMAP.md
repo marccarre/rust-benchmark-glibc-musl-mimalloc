@@ -135,5 +135,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Foundation MVP Slice | 2/2 | Complete   | 2026-05-18 |
 | 2. Scenario Fan-Out | 3/3 | Complete   | 2026-05-18 |
 | 3. Docker Matrix & Local Orchestration | 3/5 | In Progress|  |
-| 4. Aggregator & Dashboard | 0/TBD | Not started | - |
+| 4. Aggregator & Dashboard | 1/3 | In Progress|  |
 | 5. CI, Image-Size Gate & Public Polish | 0/TBD | Not started | - |
