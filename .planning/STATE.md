@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
-stopped_at: Milestone complete (Phase 5 was final phase)
-last_updated: 2026-05-19T08:15:06.039Z
-last_activity: 2026-05-19 -- Phase 5 execution started
+status: Awaiting next milestone
+stopped_at: Phase 1 context gathered
+last_updated: "2026-05-19T11:31:44.631Z"
+last_activity: 2026-05-19 — Milestone v1.0 completed and archived
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 17
   completed_plans: 16
-  percent: 60
+  percent: 80
 ---
 
 # Project State
@@ -25,12 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-17)
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-19
-
-Progress: [░░░░░░░░░░] 0%
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-05-19 — Milestone v1.0 completed and archived
 
 ## Performance Metrics
 
@@ -79,14 +77,21 @@ None yet.
 
 ## Deferred Items
 
-Items acknowledged and carried forward from previous milestone close:
+Items acknowledged and deferred at milestone close on 2026-05-19:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| uat_gap | Phase 04 — 04-HUMAN-UAT.md (2 open scenarios) | partial | v1.0 close |
+| uat_gap | Phase 05 — 05-HUMAN-UAT.md (2 open scenarios) | partial | v1.0 close |
+| verification_gap | Phase 04 — 04-VERIFICATION.md | human_needed | v1.0 close |
+| verification_gap | Phase 05 — 05-VERIFICATION.md | human_needed | v1.0 close |
 
 ## Session Continuity
 
 Last session: 2026-05-16T20:49:14.127Z
 Stopped at: Phase 1 context gathered
 Resume file: .planning/phases/01-foundation-mvp-slice/01-CONTEXT.md
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

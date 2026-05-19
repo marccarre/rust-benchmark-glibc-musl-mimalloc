@@ -12,30 +12,29 @@ Every result is reproducible, environment-labelled, and visually comparable — 
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Cargo workspace with `alloc-bench-cli`, `alloc-bench-core`, `alloc-bench-aggregator` crates and Cargo-feature allocator selection — v1.0
+- ✓ Six libc×allocator build targets shipped via Phase 3 Dockerfiles (glibc-ptmalloc / glibc-jemalloc / glibc-mimalloc / musl-mallocng / musl-jemalloc / musl-mimalloc) — v1.0
+- ✓ Multi-thread allocation stress benchmark (SCEN-01) with `--threads N --objects M --size-dist <…>` CLI — v1.0
+- ✓ Web-service benchmark on axum + serde_json + tokio with `--server-workers/--client-workers/--duration` and req/s + p50/p95/p99/p999 latency — v1.0
+- ✓ SPMC, MPSC, MPMC channel benchmarks via crossbeam-channel — v1.0
+- ✓ CPU-bound parallel merge-sort benchmark — v1.0
+- ✓ Memory-bound benchmark (linked-list + strided-array modes) — v1.0
+- ✓ Lock-contention benchmark — v1.0
+- ✓ Custom harness with HDR-histogram percentile latency + getrusage peak RSS + allocator-internal stats — v1.0
+- ✓ Compile-time metadata injection via `vergen` (rustc version, target triple, host triple, profile, git SHA, build timestamp) — v1.0
+- ✓ Release profile: `lto = "fat"`, `codegen-units = 1`, `opt-level = 3`, `strip = "symbols"`, `panic = unwind` (preserved per Phase-2 review CR-01) — v1.0
+- ✓ Justfile orchestrating the 18-cell meaningful matrix (`just bench-all`) plus `just bench-host` for macOS libmalloc baseline — v1.0
+- ✓ GitHub Actions CI on `ubuntu-24.04` running the 18-cell matrix × 3 seeds, with `dive --ci` image-size enforcement — v1.0 (definitional ORCH-04 push observation deferred to UAT)
+- ✓ Six Docker environments: alpine, debian-slim, distroless-cc, distroless-static, scratch, wolfi (with cargo-chef multi-stage builds + OCI annotations) — v1.0
+- ✓ `dive --ci` image-size gate wired to GHA per-cell — v1.0
+- ✓ results.json per run with env + allocator + scenario + metrics (locked v1 schema) — v1.0
+- ✓ Plotly HTML dashboard with multi-select sidebar (scenarios × envs × allocators), throughput bar / latency heatmap / RSS line / A/B diff charts — v1.0 (browser-rendering visual gate deferred to UAT)
+- ✓ REPORT.md with per-scenario winner-highlighted comparison tables, Docker runtime table, four Mermaid allocator-architecture diagrams, multi-run statistics (median + min/max + CV%), high-variance flagging (CV > 10%), data-derived Recommendations — v1.0
+- ✓ README.md system diagram (kernel → libc → application allocator → user code) + 5-step "Run it yourself" walkthrough + 18-cell matrix overview + Reproducibility section — v1.0 (fresh-user reproduction gate deferred to UAT)
 
 ### Active
 
-- [ ] Cargo workspace with one bench-runner crate and allocator selection via Cargo features at build time
-- [ ] Six libc×allocator build targets: glibc-ptmalloc, glibc-jemalloc, glibc-mimalloc, musl-mallocng, musl-jemalloc, musl-mimalloc
-- [ ] Micro-allocation benchmark: N threads each allocating M objects of random sizes (N, M, size range configurable via CLI)
-- [ ] Web-service benchmark: axum + serde_json + tokio, saturating load for configurable duration, measuring req/s, p50/p95/p99 latency
-- [ ] SPMC, MPSC, MPMC channel benchmarks exercising crossbeam or std channels with heap payloads
-- [ ] CPU-bound benchmark (e.g. parallel merge-sort or matrix multiply) measuring wall-clock and throughput
-- [ ] Memory-bound benchmark (e.g. pointer-chasing linked list or large array traversal) measuring peak RSS and bandwidth
-- [ ] Lock-contention / arena benchmark to stress allocator scalability under high thread counts
-- [ ] Custom harness: warm-up run, configurable duration, p50/p95/p99/p999 via hdrhistogram, peak RSS via /proc/self/statm (Linux) or getrusage, allocator-internal stats (jemalloc-ctl, mimalloc stats API)
-- [ ] Compiler version + build metadata injected at compile time via build.rs (rustc version, target triple, allocator name, build timestamp)
-- [ ] Release profile with LTO=fat, codegen-units=1, opt-level=3, RUSTFLAGS="-C target-cpu=native" (Linux builds)
-- [ ] Justfile orchestrating the full 6×6 = 36-cell benchmark matrix locally; `just bench-all` runs everything
-- [ ] GitHub Actions matrix CI producing results.json artifacts + REPORT.md on each push
-- [ ] Seven Docker environments: macOS host as-is (libmalloc baseline), Alpine, Debian-slim, Distroless, Scratch (musl static), Wolfi, Chainguard static
-- [ ] Docker multi-stage builds using Rust builder stage → minimal runtime stage; OCI labels (org.opencontainers.image.*) on all images
-- [ ] Dive integration in CI to verify image layer efficiency (max wasted bytes threshold)
-- [ ] Results emitted as results.json per run (env + allocator + scenario × metrics)
-- [ ] Interactive HTML dashboard (Plotly) for side-by-side comparison, filtering by scenario/env/allocator, p-percentile selection
-- [ ] REPORT.md with side-by-side allocator comparison table, Docker runtime comparison table, Mermaid.js allocator architecture diagrams
-- [ ] README.md with Mermaid.js overall memory-allocation system diagram
+(No active requirements — v1.0 shipped. Use `/gsd:new-milestone` to start v1.1 / v2.0 planning.)
 
 ### Out of Scope
 
@@ -78,16 +77,24 @@ Every result is reproducible, environment-labelled, and visually comparable — 
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Cargo features select allocator at build time | Clean, reproducible, no LD_PRELOAD fragility; one feature per allocator combo | — Pending |
-| Custom harness over Criterion | Criterion is microbench-shaped; throughput/latency-distribution benches need duration-based runs with warm-up and HDR histograms | — Pending |
-| axum + serde_json + tokio for web bench | Most representative modern Rust async stack in 2026; maximises allocator-stress via Tokio runtime + serde heap work | — Pending |
-| macOS host as 7th env (libmalloc) | User requested it as dev-box baseline; documented as not directly comparable to Linux 6-combo matrix | — Pending |
-| Plotly HTML dashboard (not Marimo) | Marimo is Python-first; pure Plotly HTML is self-contained and zero-dependency for end consumers | — Pending |
-| OCI annotations on all Docker images | Best practice per opencontainers/image-spec; community-standard as of 2025-2026 | — Pending |
-| Dive CI gate for image efficiency | Prevents accidental large layers; enforces image-size discipline in a public benchmark repo | — Pending |
+| Cargo features select allocator at build time | Clean, reproducible, no LD_PRELOAD fragility | ✓ Good — shipped in v1.0 |
+| Custom harness over Criterion | Duration-based throughput/latency-distribution benches with warm-up + HDR histograms | ✓ Good — shipped in v1.0 (Phase 1 D-09) |
+| axum + serde_json + tokio for web bench | Most representative modern Rust async stack in 2026 | ✓ Good — shipped (Phase 2 SCEN-02) |
+| macOS host as 7th env (libmalloc) | Dev-box baseline; documented as not directly comparable to Linux 6-combo matrix | ✓ Good — `just bench-host` ships in v1.0 |
+| Plotly HTML dashboard (not Marimo) | Self-contained, zero Python dependency, opens via `file://` | ✓ Good — shipped in v1.0 |
+| Plotly via CDN (not inlined ~4MB) | Keeps committed `index.html` ~100KB; SRI hash + crossorigin=anonymous integrity | ✓ Good — shipped (Phase 4 D-02; CR-01 fix added defense-in-depth XSS escape) |
+| tinytemplate for HTML rendering | Minimal Rust template engine; brace-escape pitfall guarded by compile-time test | ✓ Good — shipped (Phase 4 D-01) |
+| Multi-run statistics: Bessel-corrected sample stddev + CV% > 10% high-variance flag | Captures CI runner variance; conservative threshold (10%) per industry conventions | ✓ Good — shipped (Phase 5 D-11/D-12) |
+| Sidecar `meta.json` for image_size_mb backfill | Preserves locked v1 schema (Phase 1 D-11) while populating Docker runtimes table | ✓ Good — shipped (Phase 5 D-13) |
+| OCI annotations on all Docker images | opencontainers/image-spec best practice | ✓ Good — shipped in v1.0 |
+| Dive CI gate for image efficiency | Prevents accidental large layers in a public benchmark repo | ✓ Good — wired to GHA (Phase 5 D-08) |
+| 18-cell meaningful matrix (not 36) | Skip cross-libc combos that are physically impossible (mallocng-on-glibc, ptmalloc-on-musl) | ✓ Good — shipped (Phase 3 D-04) |
+| `target-cpu=x86-64-v3` (not native) for Docker | Portable across CI runners; native reserved for `just bench-host` | ✓ Good — shipped (Phase 3 D-09) |
+| `panic = unwind` preserved at toolchain default | Preserves `std::panic::catch_unwind` per-scenario isolation in run-all (Phase-2 CR-01) | ✓ Good — preserved in v1.0 |
+| 5-phase MVP decomposition | Each phase ships an independently verifiable artifact (skeleton → full scenarios → matrix → dashboard → CI) | ✓ Good — shipped 2026-05-19 |
 
 ---
-*Last updated: 2026-05-17 after initialization*
+*Last updated: 2026-05-19 after v1.0 milestone*
 
 ## Evolution
 
