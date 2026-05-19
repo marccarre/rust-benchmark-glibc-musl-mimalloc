@@ -2,9 +2,9 @@
 
 # rust-benchmark-glibc-musl-mimalloc
 
-> Reproducible Rust allocator benchmarks across glibc/ptmalloc, musl/mallocng, jemalloc, and mimalloc — six libc·environment combinations × eleven workload scenarios.
+> Reproducible Rust allocator benchmarks across glibc/ptmalloc, musl/mallocng, jemalloc, and mimalloc — six libc·environment combinations × ten workload scenarios.
 
-This benchmark suite measures four memory allocators (glibc/ptmalloc, musl/mallocng, jemalloc, mimalloc) across eighteen meaningful (env × allocator) cells and eleven workload scenarios (micro-allocation stress, web-service request/response, SPMC/MPSC/MPMC channel pipelines, CPU-bound, memory-bound, lock-contention). Every run is environment-labelled, dual-libc reproducible, and aggregated into both an interactive Plotly HTML dashboard at `report/index.html` and a Markdown report (`report/REPORT.md`) with Mermaid.js architecture diagrams. The GitHub Actions matrix runs on `ubuntu-24.04` with three seeds per cell to capture the *shape* of the curve (relative ordering across allocators), while the local `just bench-all` recipe is the canonical *statistical-quality* measurement (longer warmup + duration + more samples). Results carry both `⚠ suspect` (low samples / short warmup) and `⚠ high variance` (CV > 10%) flags so the reader always knows how much weight to put on a given number.
+This benchmark suite measures four memory allocators (glibc/ptmalloc, musl/mallocng, jemalloc, mimalloc) across eighteen meaningful (env × allocator) cells and ten workload scenarios (micro-allocation stress, web-service request/response, SPMC/MPSC/MPMC channel pipelines, CPU-bound, memory-bound, lock-contention). Every run is environment-labelled, dual-libc reproducible, and aggregated into both an interactive Plotly HTML dashboard at `report/index.html` and a Markdown report (`report/REPORT.md`) with Mermaid.js architecture diagrams. The GitHub Actions matrix runs on `ubuntu-24.04` with three seeds per cell to capture the *shape* of the curve (relative ordering across allocators), while the local `just bench-all` recipe is the canonical *statistical-quality* measurement (longer warmup + duration + more samples). Results carry both `⚠ suspect` (low samples / short warmup) and `⚠ high variance` (CV > 10%) flags so the reader always knows how much weight to put on a given number.
 
 ## How memory allocation works on Linux
 
@@ -19,7 +19,7 @@ flowchart TD
   app --> std --> ga --> libc --> kernel --> phys
 ```
 
-When a Rust program calls `Vec::new()` or `Box::new(x)`, the request travels through `std::alloc` → the configured `#[global_allocator]` (jemalloc / mimalloc / system) → libc malloc (ptmalloc on glibc, mallocng on musl) → the kernel's `mmap` / `brk` / `sbrk` → physical memory. Each layer can change the cost, fragmentation profile, and tail-latency shape of an allocation. This benchmark measures those differences across four allocators, six libc·env combinations, and eleven workload scenarios.
+When a Rust program calls `Vec::new()` or `Box::new(x)`, the request travels through `std::alloc` → the configured `#[global_allocator]` (jemalloc / mimalloc / system) → libc malloc (ptmalloc on glibc, mallocng on musl) → the kernel's `mmap` / `brk` / `sbrk` → physical memory. Each layer can change the cost, fragmentation profile, and tail-latency shape of an allocation. This benchmark measures those differences across four allocators, six libc·env combinations, and ten workload scenarios.
 
 ## Run it yourself
 
@@ -34,7 +34,7 @@ The full reproduction loop is five steps. Pick the **smoke run** to verify the p
    cd rust-benchmark-glibc-musl-mimalloc
    ```
 3. **Run the matrix.** Two recipes are available:
-   - **Smoke run (~10 min)** — `just bench-all-smoke`. Uses `--warmup 1s --duration 5s` per scenario across all 18 cells × 11 scenarios × 3 seeds. Proves the loop end-to-end and catches regressions in *relative ordering*; not a statistical-quality run on its own (the smoke recipe is below the documented sample-count floor — see `.planning/research/PITFALLS.md` §1.4).
+   - **Smoke run (~10 min)** — `just bench-all-smoke`. Uses `--warmup 1s --duration 5s` per scenario across all 18 cells × 10 scenarios × 3 seeds. Proves the loop end-to-end and catches regressions in *relative ordering*; not a statistical-quality run on its own (the smoke recipe is below the documented sample-count floor — see `.planning/research/PITFALLS.md` §1.4).
    - **Full run (~2.5 hours, ~5 GB disk)** — `just bench-all`. Uses `--warmup 5s --duration 60s` per scenario, the canonical statistical-quality measurement. Plan ~5 GB of free disk for the per-cell `results/*.json` plus the rendered `report/`.
 
    The trade-off in one line: smoke proves the loop; full run is the canonical statistical-quality measurement.
@@ -91,7 +91,7 @@ Every measurement in this repo is reproducible byte-for-byte (modulo runner-CPU 
 - **rustc 1.91** — pinned via `rust-toolchain.toml` (`channel = "1.91"`). All six `docker/*.Dockerfile` images and `justfile:79` use the same `--build-arg RUST_VERSION=1.91`. CI installs the toolchain via `dtolnay/rust-toolchain@1.91.0` (patch-pinned). The workspace `Cargo.toml` declares `rust-version = "1.83"` separately — that is the **MSRV** (minimum supported version for downstream consumers), NOT the build-time pin.
 - **Six pinned Docker base images** — `alpine:3.20`, `debian:bookworm-slim`, `gcr.io/distroless/cc-debian12:nonroot`, `gcr.io/distroless/static-debian12:nonroot`, `cgr.dev/chainguard/wolfi-base:latest`, `scratch` (Phase 3 D-05). Each Dockerfile sets `ARG RUST_VERSION=1.91` and `target-cpu=x86-64-v3` consistently.
 - **Build flag `RUSTFLAGS="-C target-cpu=x86-64-v3"`** (Phase 3 D-09) — same flag in CI and Docker images so the runner-CPU and the in-image binary agree on the instruction set. Critically, `target-cpu=native` is forbidden — GHA hosted runners migrate between CPU types stochastically, and a native-tuned binary would crash with illegal-instruction on a different runner.
-- **GHA hardware** — `ubuntu-24.04` free tier, 4 vCPU / 16 GB RAM. The CI matrix proves the pipeline runs and catches regressions in *relative ordering across allocators*; absolute numbers vary across runs because the runner CPU is shared with other tenants. CI duration target is ~60 min p95 wall-clock for the full 18-cell × 11-scenario × 3-seed smoke matrix at full parallelism. The local `just bench-all` recipe on a quiet host is the canonical statistical-quality measurement.
+- **GHA hardware** — `ubuntu-24.04` free tier, 4 vCPU / 16 GB RAM. The CI matrix proves the pipeline runs and catches regressions in *relative ordering across allocators*; absolute numbers vary across runs because the runner CPU is shared with other tenants. CI duration target is ~60 min p95 wall-clock for the full 18-cell × 10-scenario × 3-seed smoke matrix at full parallelism. The local `just bench-all` recipe on a quiet host is the canonical statistical-quality measurement.
 - **Pitfalls list** — see [`.planning/research/PITFALLS.md`](.planning/research/PITFALLS.md) for the full taxonomy of "things that bias allocator benchmarks": sample-count floors, target-cpu portability, multi-run aggregation conventions, rustc pinning hygiene, and shared-tenant noise.
 
 Reports also surface two read-time variance flags so the reader always knows how much weight a number deserves:
