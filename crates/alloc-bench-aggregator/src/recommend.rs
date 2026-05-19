@@ -163,9 +163,17 @@ fn recommend_for_class(class: WorkloadClass, runs: &[Run]) -> Recommendation {
                 if matching.is_empty() {
                     continue;
                 }
-                let mean: f64 = matching.iter().map(|r| r.metrics.ticks_per_s).sum::<f64>()
-                    / matching.len() as f64;
-                per_scenario.insert(scen, mean);
+                // D-11 (Plan 03): prefer median across runs (multi_run::aggregate);
+                // fall back to mean for n<2 so existing single-run-per-cell
+                // fixtures pick the same winner as in Phase 4. The mean fallback
+                // arithmetic is identical to the previous code path.
+                let throughputs: Vec<f64> =
+                    matching.iter().map(|r| r.metrics.ticks_per_s).collect();
+                let central_tendency = match crate::multi_run::aggregate(&throughputs) {
+                    Some(stats) => stats.median,
+                    None => throughputs.iter().sum::<f64>() / (throughputs.len() as f64).max(1.0),
+                };
+                per_scenario.insert(scen, central_tendency);
                 if matching.iter().any(|r| is_suspect(&r.harness)) {
                     any_suspect = true;
                 }
@@ -497,6 +505,36 @@ mod tests {
                 .starts_with("+100.0% throughput vs ptmalloc on mpmc"),
             "rationale was {:?}",
             r.rationale
+        );
+    }
+
+    /// D-11 (Plan 03 Task 3): when 3 seeded runs are present per
+    /// `(alloc, scenario)` cell, the winner picker uses median across the
+    /// runs as central tendency — not mean.
+    ///
+    /// Fixture: jemalloc-cpu-bound seeds [10, 100, 110] (one outlier low).
+    /// - mean(jemalloc) = (10 + 100 + 110) / 3 = 73.33 → loses to ptmalloc 50.
+    /// - median(jemalloc) = 100 → wins vs ptmalloc 50.
+    ///
+    /// Asserts the recommendation picks jemalloc (median-driven), proving
+    /// the multi_run::aggregate central-tendency swap is wired.
+    #[test]
+    fn winner_picker_uses_median_when_three_seeds_present() {
+        let runs = vec![
+            // jemalloc-cpu-bound: 3 seeds with a low outlier (mean=73.3, median=100).
+            synth_run("jemalloc", "cpu-bound", 10.0, 50_000, 5.0),
+            synth_run("jemalloc", "cpu-bound", 100.0, 50_000, 5.0),
+            synth_run("jemalloc", "cpu-bound", 110.0, 50_000, 5.0),
+            // ptmalloc-cpu-bound: 3 stable seeds at 50.0 (mean=50, median=50).
+            synth_run("ptmalloc", "cpu-bound", 50.0, 50_000, 5.0),
+            synth_run("ptmalloc", "cpu-bound", 50.0, 50_000, 5.0),
+            synth_run("ptmalloc", "cpu-bound", 50.0, 50_000, 5.0),
+        ];
+        let recs = recommendations(&runs);
+        let r = cpu_bound_recommendation(&recs);
+        assert_eq!(
+            r.allocator, "jemalloc",
+            "median-driven central tendency should pick jemalloc; mean-driven would pick ptmalloc. Got: {r:?}"
         );
     }
 
