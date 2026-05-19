@@ -18,9 +18,11 @@
 //! must print rustc version, target triple, allocator name at startup"
 //! does NOT apply. No version banner is emitted.
 
+mod diagrams;
 mod html;
 mod loader;
 mod markdown;
+mod recommend;
 
 use anyhow::{Context, Result};
 use clap::Parser;

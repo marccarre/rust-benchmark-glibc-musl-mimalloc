@@ -142,7 +142,12 @@ fn aggregator_emits_html_and_markdown_against_fixtures() {
         md.contains("# alloc-bench REPORT"),
         "REPORT.md missing top-level H1"
     );
-    assert!(md.contains("## Runs"), "REPORT.md missing ## Runs section");
+    // Plan 03 replaced the Plan-01 `## Runs` bullet section with per-scenario
+    // allocator comparison tables. Anchor on the Plan-03 emit set instead.
+    assert!(
+        md.contains("## Docker runtimes"),
+        "REPORT.md missing ## Docker runtimes section"
+    );
     assert!(
         md.contains("<!-- schema_version: 1"),
         "REPORT.md missing schema_version comment"
@@ -370,5 +375,131 @@ fn aggregator_html_bootstraps_default_ab_pickers() {
     assert!(
         html.contains("ENVS[0]"),
         "missing default A/B env (ENVS[0]) in bootstrap"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Plan 03 Task 6: REPORT.md richness + README.md system diagram smoke tests
+// ---------------------------------------------------------------------------
+
+/// Run the aggregator against the committed fixtures and return the
+/// rendered REPORT.md as a String. Mirrors the HTML helper so the new
+/// markdown-side tests share a consistent setup.
+fn run_aggregator_and_read_markdown() -> (tempfile::TempDir, String) {
+    let out_dir = tempdir().expect("tempdir");
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let pattern = format!("{}/*.json", fixtures.display());
+    let mut cmd = Command::cargo_bin("alloc-bench-aggregator").expect("cargo bin");
+    cmd.args(["--input"])
+        .arg(&pattern)
+        .args(["--output"])
+        .arg(out_dir.path());
+    cmd.assert().success();
+    let md = std::fs::read_to_string(out_dir.path().join("REPORT.md")).expect("read REPORT.md");
+    (out_dir, md)
+}
+
+/// AGG-06: REPORT.md contains four `flowchart TD` Mermaid blocks (one
+/// per allocator architecture: jemalloc, mallocng, mimalloc, ptmalloc).
+#[test]
+fn aggregator_report_md_contains_four_mermaid_diagrams() {
+    let (_dir, md) = run_aggregator_and_read_markdown();
+    assert!(
+        md.contains("flowchart TD"),
+        "REPORT.md missing any flowchart TD"
+    );
+    let count = md.matches("flowchart TD").count();
+    assert!(
+        count >= 4,
+        "expected ≥ 4 `flowchart TD` blocks in REPORT.md, got {count}"
+    );
+}
+
+/// AGG-07: REPORT.md contains the `## Recommendations by workload`
+/// section with data-derived rationale strings (`% throughput vs`)
+/// AND every workload class label.
+#[test]
+fn aggregator_report_md_contains_recommendations_section() {
+    let (_dir, md) = run_aggregator_and_read_markdown();
+    for needle in [
+        "## Recommendations by workload",
+        "% throughput vs",
+        "channel-heavy",
+        "contention",
+        "cpu-bound",
+        "fragmentation-prone",
+        "memory-bound",
+        "web-ser-de",
+    ] {
+        assert!(
+            md.contains(needle),
+            "REPORT.md missing {needle:?} in Recommendations section"
+        );
+    }
+}
+
+/// AGG-05: REPORT.md `## Docker runtimes` table — column header,
+/// em-dash cells, footnote anchor.
+#[test]
+fn aggregator_report_md_contains_docker_runtimes_table() {
+    let (_dir, md) = run_aggregator_and_read_markdown();
+    for needle in [
+        "## Docker runtimes",
+        "image_size_mb",
+        "\u{2014}", // em-dash U+2014
+        "Phase 5 CI via",
+    ] {
+        assert!(
+            md.contains(needle),
+            "REPORT.md missing {needle:?} in Docker runtimes table"
+        );
+    }
+}
+
+/// AGG-04: REPORT.md per-scenario tables emit the `**✓ ` bold-and-check
+/// winner-prefix on at least one row. Plan-01 fixtures + Plan-03 logic
+/// guarantee a winner row is rendered for every per-scenario table.
+#[test]
+fn aggregator_report_md_contains_winner_prefix() {
+    let (_dir, md) = run_aggregator_and_read_markdown();
+    assert!(
+        md.contains("**\u{2713} "),
+        "REPORT.md missing bold-and-check winner prefix `**\\u{{2713}} `"
+    );
+}
+
+/// AGG-04: REPORT.md surfaces both suspect-predicate italic notes when
+/// run against the Task-4 augmented jemalloc-alpine fixture. Run 1 has
+/// samples_count=5000 → low-samples; Run 3 has warmup_duration_s=2.0 →
+/// short-warmup.
+#[test]
+fn aggregator_report_md_contains_suspect_italic_notes() {
+    let (_dir, md) = run_aggregator_and_read_markdown();
+    assert!(
+        md.contains("*(\u{26A0} suspect: low samples)*"),
+        "REPORT.md missing low-samples italic note"
+    );
+    assert!(
+        md.contains("*(\u{26A0} suspect: short warmup)*"),
+        "REPORT.md missing short-warmup italic note"
+    );
+}
+
+/// AGG-08: README.md contains the `## How memory allocation works on
+/// Linux` heading AND a `flowchart TD` Mermaid block. The crate lives
+/// at `crates/alloc-bench-aggregator/`, so the workspace README is two
+/// directories up from `CARGO_MANIFEST_DIR`.
+#[test]
+fn readme_md_contains_system_diagram() {
+    let readme_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../README.md");
+    let readme = std::fs::read_to_string(&readme_path)
+        .unwrap_or_else(|e| panic!("read {} failed: {e}", readme_path.display()));
+    assert!(
+        readme.contains("## How memory allocation works on Linux"),
+        "README.md missing `## How memory allocation works on Linux` heading"
+    );
+    assert!(
+        readme.contains("flowchart TD"),
+        "README.md missing `flowchart TD` Mermaid block"
     );
 }
