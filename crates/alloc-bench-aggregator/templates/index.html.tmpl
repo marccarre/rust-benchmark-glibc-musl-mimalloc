@@ -197,14 +197,91 @@ section.diff-picker label \{
 // HTML-escaping `<`/`>`/`&`/`"` inside the JSON.
 const RESULTS = { results_json | unescaped };
 
-// Plan 01 ships the skeleton; Plan 02 wires the actual `Plotly.react`
-// calls against RESULTS and the filter sidebar.
+// Plan 02 (Task 1) — sidebar bootstrap source data. Server-side BTreeSet
+// guarantees alphabetical iteration order (D-09 byte-identical output).
+const SCENARIOS = { scenarios_json | unescaped };
+const ENVS = { envs_json | unescaped };
+const ALLOCATORS = { allocators_json | unescaped };
+// `\{allocator}·\{env}` keys for runs that trip the D-07 suspect predicate
+// (samples_count<10000 OR warmup_duration_s<5.0). Wrapped in a Set so the
+// bootstrap can decide per-option whether to render the `⚠ ` prefix.
+const SUSPECT_PAIRS = new Set({ suspect_pairs_json | unescaped });
+
+function envLabel(run) \{ return run.env.docker_image || 'host'; }
+function isSuspect(run) \{ return run.harness.samples_count < 10000 || run.harness.warmup_duration_s < 5.0; }
+// `·` keeps the file pure ASCII — equivalent to U+00B7 MIDDLE DOT
+// at runtime, which matches the SUSPECT_PAIRS keys emitted by html.rs.
+function suspectKey(alloc, env) \{ return alloc + '·' + env; }
+
+function bootstrap() \{
+  // Multi-selects: every option starts `selected` per UI-SPEC line 240.
+  const multiTargets = [
+    \{ id: 'sel-scenarios', src: SCENARIOS },
+    \{ id: 'sel-envs', src: ENVS },
+    \{ id: 'sel-allocs', src: ALLOCATORS },
+  ];
+  for (const t of multiTargets) \{
+    const sel = document.querySelector('#' + t.id);
+    sel.innerHTML = '';
+    for (const v of t.src) \{
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+  // A/B picker single-selects. `⚠ ` prefix surfaces server-side via
+  // SUSPECT_PAIRS (UI-SPEC line 128).
+  const allocPickers = ['ab-a-alloc', 'ab-b-alloc'];
+  const envPickers = ['ab-a-env', 'ab-b-env'];
+  for (const id of allocPickers) \{
+    const sel = document.querySelector('#' + id);
+    sel.innerHTML = '';
+    for (const a of ALLOCATORS) \{
+      // Any env paired with this alloc that is suspect → prefix.
+      let any = false;
+      for (const e of ENVS) \{
+        if (SUSPECT_PAIRS.has(suspectKey(a, e))) \{ any = true; break; }
+      }
+      const opt = document.createElement('option');
+      opt.value = a;
+      opt.textContent = (any ? '⚠ ' : '') + a;
+      sel.appendChild(opt);
+    }
+  }
+  for (const id of envPickers) \{
+    const sel = document.querySelector('#' + id);
+    sel.innerHTML = '';
+    for (const e of ENVS) \{
+      let any = false;
+      for (const a of ALLOCATORS) \{
+        if (SUSPECT_PAIRS.has(suspectKey(a, e))) \{ any = true; break; }
+      }
+      const opt = document.createElement('option');
+      opt.value = e;
+      opt.textContent = (any ? '⚠ ' : '') + e;
+      sel.appendChild(opt);
+    }
+  }
+  // Defaults per UI-SPEC line 256: A=(first alloc, first env);
+  // B=(second alloc if available else first, same env as A).
+  if (ALLOCATORS.length > 0 && ENVS.length > 0) \{
+    document.querySelector('#ab-a-alloc').value = ALLOCATORS[0];
+    document.querySelector('#ab-a-env').value = ENVS[0];
+    document.querySelector('#ab-b-alloc').value = ALLOCATORS.length > 1 ? ALLOCATORS[1] : ALLOCATORS[0];
+    document.querySelector('#ab-b-env').value = ENVS[0];
+  }
+}
+
+// Plan 01 stub — Plan 02 Task 2 replaces it with the real chart wiring.
 function onFilterChange() \{
   /* Plan 02 wires Plotly.react against RESULTS */
 }
 document.querySelectorAll("select[multiple]").forEach(el => \{
   el.addEventListener("change", onFilterChange);
 });
+bootstrap();
 onFilterChange();
 </script>
 </body>
