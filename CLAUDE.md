@@ -82,7 +82,17 @@ A comprehensive Rust benchmark suite comparing four memory allocators (glibc/ptm
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+Patterns established across Phases 1–5 of the v1.0 milestone:
+
+- **Conventional-commit prefixes:** `feat(NN)`, `chore(NN)`, `docs(NN)`, `test(NN)`, `ci(NN)`, `refactor(NN)`, `fix(NN)` where `NN` is the zero-padded phase number (and optionally `NN-PP` for plan-scoped commits, e.g. `docs(05-04)`).
+- **Aggregator decorate-not-rewrite:** the v1 input schema in `crates/alloc-bench-core/src/output.rs` is locked (Phase 1 D-11). New fields ride sidecar files (e.g., `meta/{alloc}-{env}.json` carrying `image_size_mb` per Phase 5 D-13) and the aggregator merges them at REPORT.md / HTML emit time. Never mutate the bench-runner output shape.
+- **Multi-run statistics convention:** Bessel-corrected sample stddev (n-1 denominator); CV > 10% flags `⚠ high variance` in REPORT.md and HTML legends; CV is undefined when `|mean| ≤ 1e-9` or non-finite (renders as em-dash). The threshold is pinned by the golden-value unit test `[100, 110, 105]` → median=105, stddev=5.0, CV ≈ 4.7619%.
+- **Byte-identical-output discipline:** alphabetical iteration via `BTreeMap` / `BTreeSet` (never `HashMap` / `HashSet`); numeric formatting `{:.1}` for throughputs in single-run cells, `{:.0}` for medians in multi-run cells, `{}` for ns latencies; the single timestamp comment at the top of REPORT.md is the only non-stable line — strippable in tests via first-line removal.
+- **GHA action pinning:** every action pinned to a specific major version (e.g., `actions/checkout@v4`, `actions/upload-artifact@v4`, `Swatinem/rust-cache@v2`, `docker/build-push-action@v6`); `dtolnay/rust-toolchain@1.91.0` is patch-pinned. No `@latest` or `@main` references.
+- **rustc pin source-of-truth:** `rust-toolchain.toml` (`channel = "1.91"`); the workspace `Cargo.toml` `rust-version = "1.83"` is the **MSRV** (minimum supported version for downstream consumers), NOT the build-time pin. The two fields have distinct semantics — do not conflate them.
+- **Cross-libc rejection:** `mallocng-on-glibc` and `ptmalloc-on-musl` are physically impossible. The `justfile build` recipe hard-rejects them; `_matrix_cells` (lines 131-150) enumerates only the 18 valid `(env, alloc)` tuples; the GHA workflow's `strategy.matrix.include:` block mirrors `_matrix_cells` verbatim — so the cross-libc combos are **structurally absent**, not runtime-skipped.
+- **CI smoke vs local full:** `just bench-all-smoke` (`--warmup 1s --duration 5s`) is the CI-shape recipe (~60 min p95 wall-clock for 18 cells × 11 scenarios × 3 seeds at full parallelism); `just bench-all` (`--warmup 5s --duration 60s`) is the canonical local statistical-quality run (~2.5 hours, ~5 GB disk). CI proves *relative ordering*; local proves *absolute throughput*.
+- **Suspect run flagging:** runs with `samples_count < 10_000` OR `warmup_duration_s < 5.0` are flagged with `⚠ suspect` in REPORT.md + HTML legends. This is a read-time decoration (computed by the aggregator on emit), not a render filter — the row is still emitted, just annotated.
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
