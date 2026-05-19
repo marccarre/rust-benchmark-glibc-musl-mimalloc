@@ -114,16 +114,26 @@ fn emit_per_scenario_tables(buf: &mut String, runs: &[Run]) {
 
         // Winner index in `sorted`: maximum metrics.ticks_per_s; alphabetical
         // tiebreak via stable iteration (we already sorted by alloc·env).
-        let winner_idx = sorted
-            .iter()
-            .enumerate()
-            .max_by(|a, b| {
-                a.1.metrics
-                    .ticks_per_s
-                    .partial_cmp(&b.1.metrics.ticks_per_s)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(|(i, _)| i);
+        //
+        // WR-01 (Phase-04 review): use forward-iteration max-finder with a
+        // STRICT `>` so we keep the FIRST-seen winner on a tie. The
+        // previous `Iterator::max_by` returned the LAST equal element
+        // (per its documented contract), which would split-brain with
+        // `recommend.rs::pick_rationale_scenario` (alphabetically-FIRST
+        // on ties) and the dashboard's `renderReportMirrorTable`
+        // (also alphabetically-FIRST on ties).
+        let mut winner_idx: Option<usize> = None;
+        for (i, r) in sorted.iter().enumerate() {
+            let tps = r.metrics.ticks_per_s;
+            match winner_idx {
+                Some(j)
+                    if tps
+                        .partial_cmp(&sorted[j].metrics.ticks_per_s)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        != std::cmp::Ordering::Greater => {}
+                _ => winner_idx = Some(i),
+            }
+        }
 
         for (idx, r) in sorted.iter().enumerate() {
             let unit = r.scenario.unit.as_deref().unwrap_or("ticks/s");
@@ -375,6 +385,32 @@ mod tests {
         assert!(
             !buf.contains("**\u{2713} ptmalloc**"),
             "ptmalloc should not be marked winner"
+        );
+    }
+
+    /// WR-01 regression: when two or more allocators record IDENTICAL
+    /// throughput on a scenario, the per-scenario table must mark the
+    /// alphabetically-FIRST allocator as the winner (matching
+    /// `recommend.rs::pick_rationale_scenario` and the dashboard's
+    /// `renderReportMirrorTable`). Previously `Iterator::max_by` returned
+    /// the LAST equal element, which split-brained the markdown output
+    /// against the recommendations table and the HTML dashboard.
+    #[test]
+    fn per_scenario_table_winner_picks_alphabetically_first_on_throughput_tie() {
+        let runs = vec![
+            // jemalloc and mimalloc tie at 100.0; alphabetically jemalloc < mimalloc.
+            make_run("jemalloc", "cpu-bound", 100.0, 50_000, 5.0, None),
+            make_run("mimalloc", "cpu-bound", 100.0, 50_000, 5.0, None),
+        ];
+        let mut buf = String::new();
+        emit_per_scenario_tables(&mut buf, &runs);
+        assert!(
+            buf.contains("**\u{2713} jemalloc**"),
+            "expected alphabetically-first `**✓ jemalloc**` on tie:\n{buf}"
+        );
+        assert!(
+            !buf.contains("**\u{2713} mimalloc**"),
+            "mimalloc should NOT win on tie (alphabetical tiebreak):\n{buf}"
         );
     }
 
