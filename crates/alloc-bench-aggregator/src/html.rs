@@ -20,14 +20,14 @@
 //! The `tinytemplate_compiles_index_template` test catches an unescaped
 //! `{` regression at `cargo test` time, not at runtime.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use alloc_bench_core::output::{HarnessInfo, Run};
 use anyhow::{Context, Result};
 use tinytemplate::TinyTemplate;
 
-use crate::loader::LoadOutcome;
+use crate::loader::{CellMeta, LoadOutcome};
 use crate::markdown::env_label;
 
 const TEMPLATE: &str = include_str!("../templates/index.html.tmpl");
@@ -84,8 +84,12 @@ struct HtmlContext<'a> {
     plotly_sri_hash: &'a str,
 }
 
-pub fn write(outcome: &LoadOutcome, out_dir: &Path) -> Result<()> {
-    let html = render(&outcome.runs)?;
+pub fn write(
+    outcome: &LoadOutcome,
+    metas: &HashMap<(String, String), CellMeta>,
+    out_dir: &Path,
+) -> Result<()> {
+    let html = render(&outcome.runs, metas)?;
     let out_path = out_dir.join("index.html");
     std::fs::write(&out_path, &html).with_context(|| format!("writing {}", out_path.display()))?;
     Ok(())
@@ -169,7 +173,7 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
     })
 }
 
-fn render(runs: &[Run]) -> Result<String> {
+fn render(runs: &[Run], _metas: &HashMap<(String, String), CellMeta>) -> Result<String> {
     let mut tt = TinyTemplate::new();
     tt.add_template("index", TEMPLATE)
         .context("compiling index.html.tmpl")?;
@@ -292,7 +296,8 @@ mod tests {
     #[test]
     fn render_inlines_results_json_unescaped() {
         let run = make_test_run("system", None, "test", 50_000);
-        let html = render(&[run]).expect("render");
+        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        let html = render(&[run], &metas).expect("render");
         assert!(
             html.contains("\"schema_version\":1"),
             "rendered html missing schema_version key in inlined JSON"
@@ -367,7 +372,8 @@ mod tests {
         run.metrics.allocator_stats = serde_json::json!({
             "raw_dump": "</script><script>alert('xss')</script>"
         });
-        let html = render(&[run]).expect("render");
+        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        let html = render(&[run], &metas).expect("render");
         // Negative: the unescaped script-terminator MUST NOT appear in
         // the rendered HTML — neither the literal `</script><script>`
         // (which would terminate the inline RESULTS block AND inject

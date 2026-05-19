@@ -23,7 +23,7 @@
 //!   - The single timestamp comment at the top is the only non-stable
 //!     line — strippable in tests via first-line removal.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -32,15 +32,19 @@ use anyhow::{Context, Result};
 
 use crate::diagrams::ALL_DIAGRAMS;
 use crate::html::is_suspect;
-use crate::loader::LoadOutcome;
+use crate::loader::{CellMeta, LoadOutcome};
 use crate::recommend::recommendations;
 
 /// Public entry point — write `report/REPORT.md` against the loaded
 /// outcome. Builds the buffer end-to-end via `build_report()` then
 /// commits to disk. The two-step shape lets the byte-identical test
 /// (Behavior 13) compare two builds without touching the filesystem.
-pub fn write(outcome: &LoadOutcome, out_dir: &Path) -> Result<()> {
-    let buf = build_report(outcome);
+pub fn write(
+    outcome: &LoadOutcome,
+    metas: &HashMap<(String, String), CellMeta>,
+    out_dir: &Path,
+) -> Result<()> {
+    let buf = build_report(outcome, metas);
     let out_path = out_dir.join("REPORT.md");
     std::fs::write(&out_path, &buf).with_context(|| format!("writing {}", out_path.display()))?;
     Ok(())
@@ -48,11 +52,14 @@ pub fn write(outcome: &LoadOutcome, out_dir: &Path) -> Result<()> {
 
 /// Build the complete REPORT.md as a String. Factored from `write()` so
 /// the byte-identical-output test can call it twice without disk I/O.
-pub(crate) fn build_report(outcome: &LoadOutcome) -> String {
+pub(crate) fn build_report(
+    outcome: &LoadOutcome,
+    metas: &HashMap<(String, String), CellMeta>,
+) -> String {
     let mut buf = String::new();
     emit_header(&mut buf, outcome);
     emit_per_scenario_tables(&mut buf, &outcome.runs);
-    emit_docker_runtimes_table(&mut buf, &outcome.runs);
+    emit_docker_runtimes_table(&mut buf, &outcome.runs, metas);
     emit_allocator_diagrams(&mut buf);
     emit_recommendations(&mut buf, &outcome.runs);
     if !outcome.skipped.is_empty() {
@@ -163,12 +170,35 @@ fn emit_per_scenario_tables(buf: &mut String, runs: &[Run]) {
     }
 }
 
-/// Docker runtimes table (D-10 / AGG-05). v1 schema lacks
-/// image_size_mb / build_time_s / run_overhead_pct — every value cell
-/// renders as em-dash; a footnote documents Phase-5 backfill via
-/// `docker inspect`.
-fn emit_docker_runtimes_table(buf: &mut String, runs: &[Run]) {
+/// Docker runtimes table (D-10 / AGG-05 / D-13).
+///
+/// When `metas` is empty (default `--meta` flag), every value cell renders
+/// as em-dash — preserving Phase-4 byte-identical-output. When `metas` is
+/// non-empty (CI populated it via `docker image inspect --format '{{.Size}}'`),
+/// each env row's `image_size_mb` cell is filled from the matching sidecar
+/// (1 decimal place); cells without a meta sidecar fall back to em-dash.
+///
+/// Join semantics: a meta sidecar carries the **short** env name
+/// (e.g. `"alpine"`), but `env_label` here is the docker_image tag
+/// (e.g. `"alloc-bench:jemalloc-alpine"`). We synthesize the expected
+/// docker_image as `format!("alloc-bench:{}-{}", meta.alloc, meta.env)`
+/// and look that up against the row's env_label. This avoids parsing
+/// the docker tag on the read side.
+fn emit_docker_runtimes_table(
+    buf: &mut String,
+    runs: &[Run],
+    metas: &HashMap<(String, String), CellMeta>,
+) {
     let envs: BTreeSet<String> = runs.iter().map(|r| env_label(&r.env).to_string()).collect();
+
+    // Build a reverse index: docker_image_tag → image_size_mb (alphabetical
+    // tiebreak via BTreeMap when multiple metas synthesize the same tag,
+    // which shouldn't happen in practice but the order is deterministic).
+    let mut by_docker_image: BTreeMap<String, f64> = BTreeMap::new();
+    for ((alloc, env_short), meta) in metas.iter() {
+        let synth = format!("alloc-bench:{alloc}-{env_short}");
+        by_docker_image.insert(synth, meta.image_size_mb);
+    }
 
     let _ = writeln!(buf, "## Docker runtimes");
     let _ = writeln!(buf);
@@ -178,13 +208,24 @@ fn emit_docker_runtimes_table(buf: &mut String, runs: &[Run]) {
     );
     let _ = writeln!(buf, "|---|---|---|---|");
     for env in envs.iter() {
-        let _ = writeln!(buf, "| {env} | \u{2014} | \u{2014} | \u{2014} |");
+        let size_cell = match by_docker_image.get(env) {
+            Some(mb) => format!("{mb:.1}"),
+            None => "\u{2014}".to_string(),
+        };
+        let _ = writeln!(buf, "| {env} | {size_cell} | \u{2014} | \u{2014} |");
     }
     let _ = writeln!(buf);
-    let _ = writeln!(
-        buf,
-        "*image_size_mb / build_time_s / run_overhead_pct populated by Phase 5 CI via docker inspect (REPR-03).*"
-    );
+    if metas.is_empty() {
+        let _ = writeln!(
+            buf,
+            "*image_size_mb / build_time_s / run_overhead_pct populated by Phase 5 CI via docker inspect (REPR-03).*"
+        );
+    } else {
+        let _ = writeln!(
+            buf,
+            "*image_size_mb populated from CI sidecar (D-13); em-dash for cells without meta sidecars.*"
+        );
+    }
     let _ = writeln!(buf);
 }
 
@@ -459,7 +500,8 @@ mod tests {
             make_run("ptmalloc", "cpu-bound", 80.0, 50_000, 5.0, Some("img-b")),
         ];
         let mut buf = String::new();
-        emit_docker_runtimes_table(&mut buf, &runs);
+        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        emit_docker_runtimes_table(&mut buf, &runs, &metas);
         // Two unique env labels → two non-header rows.
         let row_count = buf
             .lines()
@@ -494,8 +536,9 @@ mod tests {
             runs,
             skipped: vec![],
         };
-        let a = build_report(&outcome);
-        let b = build_report(&outcome);
+        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        let a = build_report(&outcome, &metas);
+        let b = build_report(&outcome, &metas);
         // Strip the FIRST line (schema_version comment) from each.
         let strip_first = |s: &str| -> String {
             let mut lines = s.splitn(2, '\n');

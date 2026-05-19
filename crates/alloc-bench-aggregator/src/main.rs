@@ -38,6 +38,10 @@ struct Cli {
     /// Glob pattern for input JSON files (D-05).
     #[arg(long, default_value = "results/*.json")]
     input: String,
+    /// Glob pattern for per-cell meta sidecars (image_size_mb / build_time_s).
+    /// Empty = skip meta merge. CI populates via 'docker inspect' (D-13).
+    #[arg(long, default_value = "")]
+    meta: String,
     /// Output directory for index.html + REPORT.md (D-05).
     #[arg(long, default_value = "report/")]
     output: String,
@@ -46,15 +50,48 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let outcome = loader::discover(&cli.input)?;
+    let metas = loader::load_cell_metas(&cli.meta)?;
     let out_dir = std::path::Path::new(&cli.output);
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("creating output dir {}", cli.output))?;
-    markdown::write(&outcome, out_dir)?;
-    html::write(&outcome, out_dir)?;
+    markdown::write(&outcome, &metas, out_dir)?;
+    html::write(&outcome, &metas, out_dir)?;
     eprintln!(
         "aggregated {} runs, skipped {}",
         outcome.runs.len(),
         outcome.skipped.len()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// D-13: the `--meta` flag defaults to an empty string so existing
+    /// local `just aggregate` invocations keep producing the byte-identical
+    /// Phase-4 REPORT.md output.
+    #[test]
+    fn cli_meta_flag_defaults_to_empty_string() {
+        let cli = Cli::parse_from(["alloc-bench-aggregator"]);
+        assert_eq!(cli.meta, "");
+    }
+
+    /// D-13: when the user passes `--meta meta/*.json`, the value lands
+    /// in the CLI struct verbatim for `loader::load_cell_metas` to glob.
+    #[test]
+    fn cli_meta_flag_accepts_glob_pattern() {
+        let cli = Cli::parse_from([
+            "alloc-bench-aggregator",
+            "--input",
+            "results/*.json",
+            "--meta",
+            "meta/*.json",
+            "--output",
+            "report/",
+        ]);
+        assert_eq!(cli.meta, "meta/*.json");
+        assert_eq!(cli.input, "results/*.json");
+        assert_eq!(cli.output, "report/");
+    }
 }

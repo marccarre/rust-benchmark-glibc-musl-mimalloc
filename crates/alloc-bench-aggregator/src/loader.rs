@@ -12,13 +12,24 @@
 //!   - Per-file failure → `eprintln!("warn: skipped {}: {}", ...)` and push
 //!     a `SkippedFile` to the outcome's `skipped` list. Discovery NEVER
 //!     fails-fast (D-08 — skip-and-continue).
+//!
+//! Phase-5 D-13 / D-14 / D-20 / RESEARCH §Pattern 4 — sidecar `meta.json`:
+//!   - `CellMeta` carries the per-cell image-size + build-time backfill
+//!     emitted by `just ci-bench-cell` (Plan 02). v1 input schema is NOT
+//!     modified — the meta merge happens at REPORT.md emit time.
+//!   - `load_cell_metas(pattern)` returns an empty `HashMap` when the
+//!     pattern is empty (default `--meta` flag value). Otherwise globs +
+//!     sorts + parses each file; per-file failures log a `warn:` line on
+//!     stderr and skip-and-continue (matches `discover` behavior).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use alloc_bench_core::output::Run;
 use alloc_bench_core::SCHEMA_VERSION;
 use anyhow::{bail, Context, Result};
 use glob::glob;
+use serde::Deserialize;
 
 /// Result of a discover() pass.
 #[derive(Debug)]
@@ -33,6 +44,67 @@ pub struct LoadOutcome {
 pub struct SkippedFile {
     pub path: PathBuf,
     pub reason: String,
+}
+
+/// Per-cell metadata sidecar (D-13 / D-14). Emitted by Plan 02's
+/// `just ci-bench-cell` recipe via `docker image inspect --format '{{.Size}}'`
+/// after each cell build. Keeps the locked v1 input schema (Phase 1 D-11/D-12)
+/// untouched — the meta carries the post-build backfill that the aggregator
+/// merges at REPORT.md emit time.
+///
+/// Fields `build_time_s` and `captured_at` are optional so older sidecars
+/// produced before those fields were added still parse cleanly.
+#[derive(Debug, Deserialize)]
+pub struct CellMeta {
+    pub alloc: String,
+    pub env: String,
+    #[allow(dead_code)] // Reserved for v2 (informational; not rendered today).
+    pub image_size_bytes: u64,
+    pub image_size_mb: f64,
+    #[allow(dead_code)] // Reserved for v2 (Docker runtimes table column not yet emitted).
+    pub build_time_s: Option<f64>,
+    #[allow(dead_code)] // Reserved for v2 (provenance; not rendered today).
+    pub captured_at: Option<String>,
+}
+
+/// Load per-cell meta sidecars by globbing `pattern`. Empty pattern →
+/// empty map (no error). Per-file parse failures log to stderr and are
+/// skipped (matches `discover`'s skip-and-continue contract).
+///
+/// The map is keyed by `(alloc, env)` exactly as written in the sidecar.
+/// `env` is the **short** env name (e.g. `"alpine"`) — NOT the full
+/// `docker_image` tag. Callers that need to join against a Run's
+/// `env.docker_image` (e.g. `"alloc-bench:jemalloc-alpine"`) compose
+/// the join themselves; see `markdown.rs::emit_docker_runtimes_table`.
+pub fn load_cell_metas(pattern: &str) -> Result<HashMap<(String, String), CellMeta>> {
+    if pattern.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut paths: Vec<PathBuf> = glob(pattern)
+        .with_context(|| format!("invalid meta glob pattern: {pattern}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+    paths.sort_unstable();
+
+    let mut map: HashMap<(String, String), CellMeta> = HashMap::new();
+    for path in paths {
+        match load_one_meta(&path) {
+            Ok(meta) => {
+                map.insert((meta.alloc.clone(), meta.env.clone()), meta);
+            }
+            Err(e) => {
+                eprintln!("warn: skipped meta {}: {}", path.display(), e);
+            }
+        }
+    }
+    Ok(map)
+}
+
+fn load_one_meta(path: &Path) -> Result<CellMeta> {
+    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let meta: CellMeta = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parsing meta {}", path.display()))?;
+    Ok(meta)
 }
 
 /// Glob the pattern, sort the matches lexicographically, then parse each
@@ -264,6 +336,58 @@ mod tests {
         let err = discover(&pattern).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("no results found"), "got: {msg}");
+    }
+
+    /// D-13 / D-14 / RESEARCH §Pattern 4: empty meta pattern → empty
+    /// HashMap, no error. The default `--meta` value is empty so existing
+    /// local `just aggregate` invocations continue to work unchanged.
+    #[test]
+    fn load_cell_metas_empty_pattern_returns_empty_map() {
+        let metas = load_cell_metas("").expect("empty pattern is OK");
+        assert!(metas.is_empty(), "empty pattern must yield empty map");
+    }
+
+    /// D-13: the multi-run fixture sidecar parses with the documented
+    /// shape — keys `(alloc, env)` exactly as written; `image_size_mb`
+    /// preserved as f64.
+    #[test]
+    fn load_cell_metas_parses_documented_fixture() {
+        let fixtures =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/multi_run/meta");
+        let pattern = format!("{}/*.json", fixtures.display());
+        let metas = load_cell_metas(&pattern).expect("load_cell_metas");
+        assert_eq!(metas.len(), 1, "expected exactly one fixture meta");
+        let key = ("jemalloc".to_string(), "alpine".to_string());
+        let meta = metas
+            .get(&key)
+            .expect("metas[(jemalloc, alpine)] should exist");
+        assert!(
+            (meta.image_size_mb - 26.55).abs() < 1e-6,
+            "image_size_mb mismatch: {}",
+            meta.image_size_mb
+        );
+    }
+
+    /// D-08-style skip-and-continue: a malformed JSON file is logged on
+    /// stderr and skipped; valid sidecars in the same glob still load.
+    #[test]
+    fn load_cell_metas_skips_malformed_json() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Good meta — minimal documented shape.
+        std::fs::write(
+            dir.path().join("good.json"),
+            r#"{"alloc":"ptmalloc","env":"debian-slim","image_size_bytes":104857600,"image_size_mb":100.0}"#,
+        )
+        .unwrap();
+        // Malformed meta — invalid JSON.
+        std::fs::write(dir.path().join("bad.json"), "not-json: garbage").unwrap();
+
+        let pattern = format!("{}/*.json", dir.path().display());
+        let metas = load_cell_metas(&pattern).expect("load_cell_metas Ok");
+        // Only the good meta survives.
+        assert_eq!(metas.len(), 1, "expected exactly one valid meta");
+        let key = ("ptmalloc".to_string(), "debian-slim".to_string());
+        assert!(metas.contains_key(&key), "good meta must be present");
     }
 
     /// D-08: when one file in a multi-file glob fails to parse, the
