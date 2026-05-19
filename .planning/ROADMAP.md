@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Scenario Fan-Out** - Remaining ten benchmark scenarios on top of the harness contract (completed 2026-05-18)
 - [ ] **Phase 3: Docker Matrix & Local Orchestration** - Six Dockerfiles, Justfile bench-all, NUMA/cgroup hardening
 - [x] **Phase 4: Aggregator & Dashboard** - alloc-bench-aggregator, Plotly HTML, REPORT.md with Mermaid diagrams (completed 2026-05-19)
-- [ ] **Phase 5: CI, Image-Size Gate & Public Polish** - GitHub Actions matrix, Dive gate, README walkthrough, recommendations
+- [x] **Phase 5: CI, Image-Size Gate & Public Polish** - GitHub Actions matrix, Dive gate, README walkthrough, recommendations (completed 2026-05-19)
 
 **Justification of phase shape:** The research-proposed 5-phase decomposition is preserved verbatim because it already matches coarse granularity (5 phases, each shippable in MVP mode) and because Phases 4 and 5 deliver independently verifiable artifacts (a working dashboard vs. a green CI matrix + public docs). Collapsing them would push 13 requirements into one phase — too coarse even for the coarse setting — and would block early review of the dashboard until CI is also green.
 
@@ -123,7 +123,7 @@ Plans:
   3. The aggregator output (driven by CI) reports median + min/max range per matrix cell across the ≥ 3 runs, and any cell with a CV > X% is highlighted as "high variance" in REPORT.md.
   4. A reader who has never seen the repo follows the README "Run it yourself" walkthrough — Docker prerequisites, `just bench-all`, then opening `report/index.html` — and reproduces a representative subset of results without needing any out-of-band knowledge.
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 
@@ -138,7 +138,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 05-04-PLAN.md — README walkthrough + LICENSE citation + STATE/ROADMAP/CLAUDE closure (REPR-01)
+- [x] 05-04-PLAN.md — README walkthrough + LICENSE citation + STATE/ROADMAP/CLAUDE closure (REPR-01)
 
 ## Progress
 
@@ -151,4 +151,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Scenario Fan-Out | 3/3 | Complete   | 2026-05-18 |
 | 3. Docker Matrix & Local Orchestration | 3/5 | In Progress|  |
 | 4. Aggregator & Dashboard | 3/3 | Complete    | 2026-05-19 |
-| 5. CI, Image-Size Gate & Public Polish | 3/4 | In Progress|  |
+| 5. CI, Image-Size Gate & Public Polish | 4/4 | Complete   | 2026-05-19 |
