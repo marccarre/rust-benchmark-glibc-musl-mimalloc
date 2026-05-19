@@ -20,7 +20,7 @@
 //! The `tinytemplate_compiles_index_template` test catches an unescaped
 //! `{` regression at `cargo test` time, not at runtime.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 use alloc_bench_core::output::{HarnessInfo, Run};
@@ -29,6 +29,7 @@ use tinytemplate::TinyTemplate;
 
 use crate::loader::{CellMeta, LoadOutcome};
 use crate::markdown::env_label;
+use crate::multi_run::{aggregate as mr_aggregate, MultiRunStats};
 
 const TEMPLATE: &str = include_str!("../templates/index.html.tmpl");
 
@@ -69,6 +70,12 @@ struct HtmlContext<'a> {
     /// runs (JSON-encoded). The bootstrap script wraps this in a `Set`
     /// and uses it to prefix option labels with `⚠ `.
     suspect_pairs_json: &'a str,
+    /// D-11 / D-12: derived `{alloc|env|scenario} → MultiRunStats` map
+    /// (JSON-encoded). Empty `{}` when no `(alloc, env, scenario)` triple
+    /// has ≥2 runs. The Plotly trace builder reads this to render
+    /// asymmetric `error_y` whiskers and the `⚠ high variance` legend
+    /// flag when CV > 10%.
+    multi_run_grouped_json: &'a str,
     run_count: usize,
     cell_count: usize,
     /// Wall-clock generation timestamp, RFC-3339-formatted via
@@ -104,6 +111,9 @@ struct BuiltContext {
     envs: String,
     allocators: String,
     suspect_pairs: String,
+    /// D-11 / D-12 derived map: keyed by `"alloc|env|scenario"` strings.
+    /// Empty `"{}"` when no `(alloc, env, scenario)` triple has ≥2 runs.
+    multi_run_grouped: String,
 }
 
 /// JSON-encode for safe inlining inside an HTML `<script>` block. Escapes
@@ -163,6 +173,30 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
         .into_iter()
         .collect();
 
+    // D-11 / D-12: derive a flat map of `"alloc|env|scenario" → MultiRunStats`
+    // for the JS trace builder. Group runs by 3-tuple, aggregate the
+    // throughput axis, and key by `"alloc|env|scenario"` so the JS lookup
+    // is O(1). BTreeMap → alphabetical iteration → byte-stable JSON.
+    let mut throughput_groups: BTreeMap<(String, String, String), Vec<f64>> = BTreeMap::new();
+    for r in runs {
+        let key = (
+            r.build.allocator.clone(),
+            env_label(&r.env).to_string(),
+            r.scenario.name.clone(),
+        );
+        throughput_groups
+            .entry(key)
+            .or_default()
+            .push(r.metrics.ticks_per_s);
+    }
+    let mut multi_run_grouped: BTreeMap<String, MultiRunStats> = BTreeMap::new();
+    for ((alloc, env, scen), samples) in throughput_groups.iter() {
+        if let Some(stats) = mr_aggregate(samples) {
+            let key = format!("{alloc}|{env}|{scen}");
+            multi_run_grouped.insert(key, stats);
+        }
+    }
+
     Ok(BuiltContext {
         results,
         scenarios: to_script_safe_json(&scenarios).context("serializing scenarios to JSON")?,
@@ -170,6 +204,8 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
         allocators: to_script_safe_json(&allocators).context("serializing allocators to JSON")?,
         suspect_pairs: to_script_safe_json(&suspect_pairs)
             .context("serializing suspect_pairs to JSON")?,
+        multi_run_grouped: to_script_safe_json(&multi_run_grouped)
+            .context("serializing multi_run_grouped to JSON")?,
     })
 }
 
@@ -186,6 +222,7 @@ fn render(runs: &[Run], _metas: &HashMap<(String, String), CellMeta>) -> Result<
         envs_json: &ctx_owned.envs,
         allocators_json: &ctx_owned.allocators,
         suspect_pairs_json: &ctx_owned.suspect_pairs,
+        multi_run_grouped_json: &ctx_owned.multi_run_grouped,
         run_count: runs.len(),
         cell_count,
         timestamp_iso8601: &timestamp,
