@@ -23,7 +23,8 @@
 #         aggregate uses pattern + merge-multiple.
 #   D-06: concurrency group cancels in-progress on non-default branches;
 #         main is never cancelled.
-#   D-07: Swatinem/rust-cache@v2 + actions/cache@v4 for cargo registry +
+#   D-07: Swatinem/rust-cache@v2 (sole cargo-cache layer; the redundant
+#         actions/cache@v4 layer was removed per Phase-5 WR-01) +
 #         BuildKit type=gha,mode=max,scope per cell.
 #   D-08, D-09: dive --ci enforcement via `just dive-check`.
 #   D-13: meta.json sidecar (image_size_bytes/_mb) captured per cell.
@@ -147,22 +148,14 @@ jobs:
         with:
           shared-key: bench-${{ matrix.alloc }}-${{ matrix.env }}
           # save-if main-only keeps the cache budget healthy on PRs.
+          # WR-01 (Phase-5 review): Swatinem/rust-cache@v2 is the SOLE
+          # cargo-cache layer here. An earlier `actions/cache@v4` block
+          # was removed because (a) it competed for the same paths
+          # (`~/.cargo/registry`, `~/.cargo/git`, `target/`), and (b) it
+          # had no `save-if` guard, so every PR run wrote ~1 GB+, blowing
+          # through the 10 GB cache budget. Swatinem's `save-if: main-only`
+          # is the canonical cache-budget guard for this workflow.
           save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Belt-and-suspenders: an actions/cache@v4 layer keyed on Cargo.lock
-      # for the cargo-registry + git index. Swatinem auto-cleans incremental
-      # files; this layer covers the registry index alone (cheap to refill,
-      # but the explicit fallback survives a Swatinem cache miss).
-      - name: Cache cargo registry index (actions/cache)
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target/
-          key: cargo-${{ matrix.alloc }}-${{ matrix.env }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-${{ matrix.alloc }}-${{ matrix.env }}-
 
       # RESEARCH §Pattern 3: BuildKit cache scoped per cell so 18 parallel
       # builds don't overwrite each other's `buildkit` cache key.
