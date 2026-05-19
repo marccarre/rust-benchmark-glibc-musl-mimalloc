@@ -1,8 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub const SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Run {
     pub schema_version: u32,
     pub run_id: String,
@@ -24,7 +24,7 @@ pub struct Run {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Env {
     pub os: String,
     pub os_version: String,
@@ -35,7 +35,7 @@ pub struct Env {
     pub memory_total_kb: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Build {
     pub allocator: String,
     pub rustc_version: String,
@@ -48,7 +48,7 @@ pub struct Build {
     pub rustflags: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ScenarioInfo {
     pub name: String,
     pub config: serde_json::Value,
@@ -61,7 +61,7 @@ pub struct ScenarioInfo {
     pub unit: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HarnessInfo {
     pub warmup_duration_s: f64,
     pub measurement_duration_s: f64,
@@ -70,7 +70,7 @@ pub struct HarnessInfo {
 
 /// Latency percentiles for a single `tick()` (one batched fork/join across
 /// all worker threads), measured in nanoseconds. *Not* per-allocation latency.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LatencyNs {
     pub p50: u64,
     pub p95: u64,
@@ -79,13 +79,13 @@ pub struct LatencyNs {
     pub max: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RssGrowthSample {
     pub t_s: u64,
     pub rss_kb: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Rusage {
     pub user_time_s: f64,
     pub sys_time_s: f64,
@@ -341,9 +341,163 @@ mod tests {
         assert!(json.contains("\"status\":\"failed\""), "got {json}");
         assert!(json.contains("\"error\":\"boom\""), "got {json}");
     }
+
+    /// Phase-4 D-15 / RESEARCH §"Pattern 2 — Deserialize derive on the v1
+    /// schema": adding `Deserialize` to all v1 structs lets the aggregator
+    /// re-read the same JSON it serialized — one source of truth, no
+    /// parallel struct hierarchy. This pins the round-trip invariant: any
+    /// future change that breaks deserialize (e.g. making a field non-Option
+    /// without `#[serde(default)]`) trips this test.
+    #[test]
+    fn deserialize_round_trips_a_canonical_run() {
+        let run = Run {
+            schema_version: SCHEMA_VERSION,
+            run_id: "stub".to_string(),
+            env: Env {
+                os: "x".into(),
+                os_version: "y".into(),
+                docker_image: None,
+                cpu_model: "z".into(),
+                cpu_count: 1,
+                memory_total_kb: 1,
+            },
+            build: Build {
+                allocator: "system".into(),
+                rustc_version: "x".into(),
+                target_triple: "x".into(),
+                host_triple: "x".into(),
+                profile: "x".into(),
+                git_sha: "x".into(),
+                git_dirty: false,
+                build_timestamp: "x".into(),
+                rustflags: "x".into(),
+            },
+            scenario: ScenarioInfo {
+                name: "stub".into(),
+                config: serde_json::json!({}),
+                unit: Some("req_per_s".into()),
+            },
+            harness: HarnessInfo {
+                warmup_duration_s: 0.0,
+                measurement_duration_s: 0.0,
+                samples_count: 0,
+            },
+            metrics: Metrics {
+                ticks_per_s: 0.0,
+                allocations_per_tick: 0,
+                tick_latency_ns: LatencyNs {
+                    p50: 0,
+                    p95: 0,
+                    p99: 0,
+                    p999: 0,
+                    max: 0,
+                },
+                peak_rss_kb: 0,
+                rss_growth_samples: vec![],
+                rusage: Rusage {
+                    user_time_s: 0.0,
+                    sys_time_s: 0.0,
+                    minor_faults: 0,
+                    major_faults: 0,
+                    voluntary_csw: 0,
+                    involuntary_csw: 0,
+                    peak_rss_kb: 0,
+                },
+                allocator_stats: serde_json::json!({}),
+            },
+            status: Some("success".into()),
+            error: None,
+        };
+        let json = serde_json::to_string(&run).expect("serialize");
+        let back: Run = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.schema_version, 1);
+        assert_eq!(back.scenario.name, "stub");
+        assert_eq!(back.status.as_deref(), Some("success"));
+        assert!(back.error.is_none());
+    }
+
+    /// D-06 forward-compat: unknown additive JSON fields must be silently
+    /// dropped on deserialize. The aggregator (and any future schema-vN+1
+    /// reader) must accept records with extra keys without erroring; this
+    /// guarantees that adding a new optional field in vN+1 does not break
+    /// vN consumers. Guarded by NOT having `#[serde(deny_unknown_fields)]`.
+    #[test]
+    fn deserialize_ignores_unknown_fields() {
+        let run = Run {
+            schema_version: SCHEMA_VERSION,
+            run_id: "stub".to_string(),
+            env: Env {
+                os: "x".into(),
+                os_version: "y".into(),
+                docker_image: None,
+                cpu_model: "z".into(),
+                cpu_count: 1,
+                memory_total_kb: 1,
+            },
+            build: Build {
+                allocator: "system".into(),
+                rustc_version: "x".into(),
+                target_triple: "x".into(),
+                host_triple: "x".into(),
+                profile: "x".into(),
+                git_sha: "x".into(),
+                git_dirty: false,
+                build_timestamp: "x".into(),
+                rustflags: "x".into(),
+            },
+            scenario: ScenarioInfo {
+                name: "stub".into(),
+                config: serde_json::json!({}),
+                unit: None,
+            },
+            harness: HarnessInfo {
+                warmup_duration_s: 0.0,
+                measurement_duration_s: 0.0,
+                samples_count: 0,
+            },
+            metrics: Metrics {
+                ticks_per_s: 0.0,
+                allocations_per_tick: 0,
+                tick_latency_ns: LatencyNs {
+                    p50: 0,
+                    p95: 0,
+                    p99: 0,
+                    p999: 0,
+                    max: 0,
+                },
+                peak_rss_kb: 0,
+                rss_growth_samples: vec![],
+                rusage: Rusage {
+                    user_time_s: 0.0,
+                    sys_time_s: 0.0,
+                    minor_faults: 0,
+                    major_faults: 0,
+                    voluntary_csw: 0,
+                    involuntary_csw: 0,
+                    peak_rss_kb: 0,
+                },
+                allocator_stats: serde_json::json!({}),
+            },
+            status: Some("success".into()),
+            error: None,
+        };
+        // Serialize → mutate → re-serialize → deserialize. The injected
+        // `future_field: 42` is silently dropped by serde's default
+        // unknown-field behavior; the round-trip succeeds.
+        let mut v: serde_json::Value = serde_json::to_value(&run).expect("to_value");
+        v.as_object_mut()
+            .expect("Run is an object")
+            .insert("future_field".to_string(), serde_json::json!(42));
+        let json = serde_json::to_string(&v).expect("re-serialize");
+        let back: Result<Run, _> = serde_json::from_str(&json);
+        assert!(
+            back.is_ok(),
+            "deserialize must ignore unknown fields, got {back:?}"
+        );
+    }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Metrics {
     /// Number of `Scenario::tick()` invocations completed per second
     /// during the measurement window. WR-01: this is *not* an allocation

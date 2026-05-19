@@ -8,3 +8,18 @@ rust-version.workspace = true
 [[bin]]
 name = "alloc-bench-aggregator"
 path = "src/main.rs"
+
+[dependencies]
+alloc-bench-core = { path = "../alloc-bench-core" }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+glob = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tinytemplate = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"

@@ -29,6 +29,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time",
 tower = { version = "0.5" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rayon = { version = "1" }
+tinytemplate = "1"
+# glob: rust-lang-owner; flagged [SUS] by slopcheck as a name-similarity false positive vs `log` (RESEARCH §Package Legitimacy Audit) — false positive; canonical glob crate.
+glob = "0.3"
 
 [profile.release]
 lto = "fat"
