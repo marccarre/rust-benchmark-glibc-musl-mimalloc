@@ -71,6 +71,14 @@ struct HtmlContext<'a> {
     suspect_pairs_json: &'a str,
     run_count: usize,
     cell_count: usize,
+    /// Wall-clock generation timestamp, RFC-3339-formatted via
+    /// `chrono::Utc::now().to_rfc3339()`. WR-04: this field is rendered
+    /// via tinytemplate's DEFAULT formatter (NOT `unescaped`), so any
+    /// stray `<`/`>`/`&`/`"` would be HTML-escaped. Today the producer
+    /// emits only digits/hyphens/colons/dot/`T`/`+` so the escape is a
+    /// no-op, but if a future contributor swaps in a custom timestamp
+    /// (e.g. reading `BENCH_TIMESTAMP_OVERRIDE` from env for repro), the
+    /// default-escape behaviour MUST stay — never switch to `| unescaped`.
     timestamp_iso8601: &'a str,
     plotly_cdn_url: &'a str,
     plotly_sri_hash: &'a str,

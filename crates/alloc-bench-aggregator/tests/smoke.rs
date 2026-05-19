@@ -357,6 +357,32 @@ fn aggregator_html_includes_empty_filter_copy() {
     );
 }
 
+/// WR-04 (Phase-04 review): rendered HTML carries a defense-in-depth
+/// Content-Security-Policy meta tag in the <head>. Allows 'self' +
+/// 'unsafe-inline' (required for the inlined RESULTS const) + the
+/// pinned Plotly CDN host. Lockdown the contract so a future refactor
+/// can't silently drop the tag.
+#[test]
+fn aggregator_html_includes_csp_meta_tag() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains("http-equiv=\"Content-Security-Policy\""),
+        "missing CSP <meta http-equiv=\"Content-Security-Policy\"> tag"
+    );
+    assert!(
+        html.contains("https://cdn.plot.ly"),
+        "CSP must allow the pinned Plotly CDN host in script-src"
+    );
+    assert!(
+        html.contains("'unsafe-inline'"),
+        "CSP must allow 'unsafe-inline' so the inlined RESULTS <script> block runs"
+    );
+    assert!(
+        html.contains("http-equiv=\"X-Content-Type-Options\""),
+        "missing X-Content-Type-Options nosniff defense-in-depth tag"
+    );
+}
+
 /// Behavior 6: rendered HTML's bootstrap function references the
 /// canonical default-A/B index expressions (UI-SPEC line 256). We
 /// assert the substrings rather than parse the JS so the test is

@@ -2,6 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<!-- WR-04 (Phase-04 review): defense-in-depth CSP. The inline RESULTS
+     <script> block requires 'unsafe-inline'; the only external script is
+     the pinned Plotly CDN tag below, which is also pinned via SRI
+     integrity= + crossorigin=anonymous. Any *other* external script
+     injection would be blocked by script-src. style-src allows
+     'unsafe-inline' because the <style> block in this <head> ships
+     CSS variables for the Viridis palette; img-src allows data: so
+     Plotly's PNG export modebar button works. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.plot.ly; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'" />
+<meta http-equiv="X-Content-Type-Options" content="nosniff" />
 <title>alloc-bench report — {run_count} runs, {timestamp_iso8601}</title>
 <!-- plotly: 2.35.3 · {plotly_sri_hash} (computed 2026-05-19 against cdn.plot.ly) -->
 <script
