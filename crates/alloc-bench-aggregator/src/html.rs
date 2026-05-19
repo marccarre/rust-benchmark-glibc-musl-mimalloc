@@ -94,10 +94,33 @@ struct BuiltContext {
     suspect_pairs: String,
 }
 
+/// JSON-encode for safe inlining inside an HTML `<script>` block. Escapes
+/// `<`, `>`, and `&` so the string literal can never terminate the host
+/// `<script>` tag (a `</script>` substring in the input becomes the JSON
+/// escape sequence `</script>` in the output). RFC 8259 permits
+/// these `\uXXXX` escapes and every JSON parser accepts them, so the
+/// decoded JS value is byte-identical to the unescaped form.
+///
+/// CR-01 (Phase-04 review): `serde_json::to_string` does NOT escape `<`,
+/// `>`, `/`, or the literal substring `</script>` when serializing string
+/// fields. Without this wrapper a `Run` whose JSON contains `</script>`
+/// (e.g. inside the free-form `scenario.config` or `metrics.allocator_stats`
+/// `serde_json::Value` fields) would terminate the inline `<script>` block
+/// in the rendered dashboard.
+fn to_script_safe_json<T: serde::Serialize + ?Sized>(v: &T) -> Result<String> {
+    let raw = serde_json::to_string(v).context("serializing to JSON")?;
+    Ok(raw
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026"))
+}
+
 fn build_context(runs: &[Run]) -> Result<BuiltContext> {
     // RESEARCH §Pitfall 2: use `to_string` (compact) — pretty-printed JSON
     // bloats the inlined RESULTS by ~3× without reader benefit.
-    let results = serde_json::to_string(runs).context("serializing runs to JSON")?;
+    // CR-01: escape `<`/`>`/`&` so attacker-controlled string fields cannot
+    // terminate the host `<script>` block.
+    let results = to_script_safe_json(runs).context("serializing runs to JSON")?;
 
     // PATTERNS §"Sorted-output / byte-identical-output pattern" — use
     // `BTreeSet`, never `HashSet`, so iteration is alphabetical.
@@ -130,10 +153,10 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
 
     Ok(BuiltContext {
         results,
-        scenarios: serde_json::to_string(&scenarios).context("serializing scenarios to JSON")?,
-        envs: serde_json::to_string(&envs).context("serializing envs to JSON")?,
-        allocators: serde_json::to_string(&allocators).context("serializing allocators to JSON")?,
-        suspect_pairs: serde_json::to_string(&suspect_pairs)
+        scenarios: to_script_safe_json(&scenarios).context("serializing scenarios to JSON")?,
+        envs: to_script_safe_json(&envs).context("serializing envs to JSON")?,
+        allocators: to_script_safe_json(&allocators).context("serializing allocators to JSON")?,
+        suspect_pairs: to_script_safe_json(&suspect_pairs)
             .context("serializing suspect_pairs to JSON")?,
     })
 }
@@ -309,6 +332,47 @@ mod tests {
             r#"["alloc-bench:jemalloc-alpine","alloc-bench:mimalloc-distroless-cc","alloc-bench:ptmalloc-debian-slim"]"#
         );
         assert_eq!(ctx.allocators, r#"["jemalloc","mimalloc","ptmalloc"]"#);
+    }
+
+    /// CR-01 regression: a `</script>` substring (or any `<`/`>`/`&`) in
+    /// a string field MUST be `\uXXXX`-escaped in the inlined JSON so it
+    /// cannot terminate the host `<script>` block. Both `scenario.config`
+    /// and `metrics.allocator_stats` are free-form `serde_json::Value`
+    /// pass-throughs — they get tested via the `Run.build.allocator`
+    /// field below, but the same escape wrapper covers them and every
+    /// other `String` field on `Run` (single code path through
+    /// `to_script_safe_json`).
+    #[test]
+    fn inlined_json_escapes_script_close_tag() {
+        let mut run = make_test_run(
+            "</script><script>alert('xss')</script>",
+            None,
+            "test",
+            50_000,
+        );
+        // Also exercise `scenario.config` (free-form serde_json::Value)
+        // and `metrics.allocator_stats` (same) so we prove the wrapper
+        // covers every byte the runs vec carries — not just `Run.build`.
+        run.scenario.config = serde_json::json!({
+            "opaque": "</script><script>alert('xss')</script>"
+        });
+        run.metrics.allocator_stats = serde_json::json!({
+            "raw_dump": "</script><script>alert('xss')</script>"
+        });
+        let html = render(&[run]).expect("render");
+        // Negative: the unescaped script-terminator MUST NOT appear in
+        // the rendered HTML — neither the literal `</script><script>`
+        // (which would terminate the inline RESULTS block AND inject
+        // a fresh script tag) nor the bare `</script>` substring.
+        assert!(
+            !html.contains("</script><script>alert"),
+            "script tag terminated inside RESULTS — CR-01 escape failed"
+        );
+        // Positive: every `<` is escaped to `<` (and `>` → `>`).
+        assert!(
+            html.contains("\\u003c/script\\u003e"),
+            "expected JSON `\\u003c/script\\u003e` escape in inlined RESULTS"
+        );
     }
 
     /// `suspect_pairs_json` lists every `{allocator}·{env}` combo whose
