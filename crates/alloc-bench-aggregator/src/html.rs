@@ -91,12 +91,23 @@ struct HtmlContext<'a> {
     plotly_sri_hash: &'a str,
 }
 
+/// Emit `index.html` from the loaded runs.
+///
+/// WR-03 (Phase-5 review): the `metas` parameter is intentionally
+/// unused by the HTML emit path — `image_size_mb` and friends are
+/// rendered ONLY in `REPORT.md` via `markdown::write`. The parameter
+/// stays on this function's signature for callsite-symmetry with
+/// `markdown::write` (both take `&LoadOutcome` + `&metas`), so the
+/// `main.rs` driver can pass the same args to both writers without
+/// branching. If a future contributor surfaces sidecar data in the
+/// dashboard, thread `metas` into `render` and `BuiltContext` and
+/// add a smoke test asserting the HTML contains the meta value.
 pub fn write(
     outcome: &LoadOutcome,
-    metas: &HashMap<(String, String), CellMeta>,
+    _metas: &HashMap<(String, String), CellMeta>,
     out_dir: &Path,
 ) -> Result<()> {
-    let html = render(&outcome.runs, metas)?;
+    let html = render(&outcome.runs)?;
     let out_path = out_dir.join("index.html");
     std::fs::write(&out_path, &html).with_context(|| format!("writing {}", out_path.display()))?;
     Ok(())
@@ -209,7 +220,7 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
     })
 }
 
-fn render(runs: &[Run], _metas: &HashMap<(String, String), CellMeta>) -> Result<String> {
+fn render(runs: &[Run]) -> Result<String> {
     let mut tt = TinyTemplate::new();
     tt.add_template("index", TEMPLATE)
         .context("compiling index.html.tmpl")?;
@@ -333,8 +344,7 @@ mod tests {
     #[test]
     fn render_inlines_results_json_unescaped() {
         let run = make_test_run("system", None, "test", 50_000);
-        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
-        let html = render(&[run], &metas).expect("render");
+        let html = render(&[run]).expect("render");
         assert!(
             html.contains("\"schema_version\":1"),
             "rendered html missing schema_version key in inlined JSON"
@@ -409,8 +419,7 @@ mod tests {
         run.metrics.allocator_stats = serde_json::json!({
             "raw_dump": "</script><script>alert('xss')</script>"
         });
-        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
-        let html = render(&[run], &metas).expect("render");
+        let html = render(&[run]).expect("render");
         // Negative: the unescaped script-terminator MUST NOT appear in
         // the rendered HTML — neither the literal `</script><script>`
         // (which would terminate the inline RESULTS block AND inject
