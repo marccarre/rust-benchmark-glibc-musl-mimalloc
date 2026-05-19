@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 1 context gathered
-last_updated: "2026-05-19T06:27:09.254Z"
-last_activity: 2026-05-19 -- Phase 5 planning complete
+last_updated: "2026-05-19T06:27:51.438Z"
+last_activity: 2026-05-19 -- Phase 5 execution started
 progress:
   total_phases: 5
   completed_phases: 3
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-17)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** Phase 5 — ci, image size gate & public polish
+**Current focus:** Phase 5 — CI, Image-Size Gate & Public Polish
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-19 -- Phase 5 planning complete
+Phase: 5 (CI, Image-Size Gate & Public Polish) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 5
+Last activity: 2026-05-19 -- Phase 5 execution started
 
 Progress: [░░░░░░░░░░] 0%
 

@@ -123,14 +123,14 @@ Plans:
   3. The aggregator output (driven by CI) reports median + min/max range per matrix cell across the ≥ 3 runs, and any cell with a CV > X% is highlighted as "high variance" in REPORT.md.
   4. A reader who has never seen the repo follows the README "Run it yourself" walkthrough — Docker prerequisites, `just bench-all`, then opening `report/index.html` — and reproduces a representative subset of results without needing any out-of-band knowledge.
 
-**Plans:** 4 plans
+**Plans:** 2/4 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — Multi-run statistics module + fixtures (REPR-03 math layer)
-- [ ] 05-02-PLAN.md — GHA workflow + LICENSE files + ci-bench-cell + ci-validate (ORCH-04, ORCH-05)
+- [x] 05-01-PLAN.md — Multi-run statistics module + fixtures (REPR-03 math layer)
+- [x] 05-02-PLAN.md — GHA workflow + LICENSE files + ci-bench-cell + ci-validate (ORCH-04, ORCH-05)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -151,4 +151,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Scenario Fan-Out | 3/3 | Complete   | 2026-05-18 |
 | 3. Docker Matrix & Local Orchestration | 3/5 | In Progress|  |
 | 4. Aggregator & Dashboard | 3/3 | Complete    | 2026-05-19 |
-| 5. CI, Image-Size Gate & Public Polish | 0/TBD | Not started | - |
+| 5. CI, Image-Size Gate & Public Polish | 2/4 | In Progress|  |
