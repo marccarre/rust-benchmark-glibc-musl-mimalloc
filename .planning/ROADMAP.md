@@ -151,4 +151,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Scenario Fan-Out | 3/3 | Complete   | 2026-05-18 |
 | 3. Docker Matrix & Local Orchestration | 3/5 | In Progress|  |
 | 4. Aggregator & Dashboard | 3/3 | Complete    | 2026-05-19 |
-| 5. CI, Image-Size Gate & Public Polish | 4/4 | Complete   | 2026-05-19 |
+| 5. CI, Image-Size Gate & Public Polish | 4/4 | Complete    | 2026-05-19 |

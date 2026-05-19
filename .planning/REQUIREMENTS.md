@@ -55,8 +55,8 @@
 - [ ] **ORCH-01**: User runs `just bench-all` and the Justfile builds + runs the full (allocator × env) matrix, emitting one results.json per cell
 - [ ] **ORCH-02**: User runs `just bench-host` and the Justfile builds + runs the bench natively on the host (macOS libmalloc baseline)
 - [x] **ORCH-03**: User runs `just aggregate` and the Justfile invokes `alloc-bench-aggregator` to produce `report/index.html` + `REPORT.md`
-- [ ] **ORCH-04**: User pushes to GitHub and a CI workflow runs the matrix (excluding macOS-specific cells) on `ubuntu-24.04`, uploading `results/` and `report/` as artifacts
-- [ ] **ORCH-05**: CI runs `dive --ci` for each image and fails the build if image-size thresholds are exceeded
+- [x] **ORCH-04**: User pushes to GitHub and a CI workflow runs the matrix (excluding macOS-specific cells) on `ubuntu-24.04`, uploading `results/` and `report/` as artifacts
+- [x] **ORCH-05**: CI runs `dive --ci` for each image and fails the build if image-size thresholds are exceeded
 
 ### Aggregator & Reporting
 
@@ -71,9 +71,9 @@
 
 ### Reproducibility & Documentation
 
-- [ ] **REPR-01**: User reads `README.md` and finds a complete "Run it yourself" walkthrough including Docker prerequisites, `just bench-all`, and how to view `report/index.html`
+- [x] **REPR-01**: User reads `README.md` and finds a complete "Run it yourself" walkthrough including Docker prerequisites, `just bench-all`, and how to view `report/index.html`
 - [ ] **REPR-02**: Every results.json includes the cpu_model, cpu_count, kernel_version, docker_image, rustc_version, target_triple, git_sha, and rustflags so any reader can reproduce the run
-- [ ] **REPR-03**: Each matrix cell runs ≥ 3 times in CI; aggregator reports median + min/max range across runs
+- [x] **REPR-03**: Each matrix cell runs ≥ 3 times in CI; aggregator reports median + min/max range across runs
 
 ## v2 Requirements (deferred)
 
@@ -158,11 +158,11 @@ Coverage: 49/49 v1 requirements mapped to exactly one phase. No orphans.
 | AGG-06 | Phase 4 | Complete |
 | AGG-07 | Phase 4 | Complete |
 | AGG-08 | Phase 4 | Complete |
-| ORCH-04 | Phase 5 | Pending |
-| ORCH-05 | Phase 5 | Pending |
-| REPR-01 | Phase 5 | Pending |
+| ORCH-04 | Phase 5 | Complete |
+| ORCH-05 | Phase 5 | Complete |
+| REPR-01 | Phase 5 | Complete |
 | REPR-02 | Phase 1 | Pending |
-| REPR-03 | Phase 5 | Pending |
+| REPR-03 | Phase 5 | Complete |
 
 ### Coverage by Phase
 
