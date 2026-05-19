@@ -123,7 +123,7 @@ Plans:
   3. The aggregator output (driven by CI) reports median + min/max range per matrix cell across the ≥ 3 runs, and any cell with a CV > X% is highlighted as "high variance" in REPORT.md.
   4. A reader who has never seen the repo follows the README "Run it yourself" walkthrough — Docker prerequisites, `just bench-all`, then opening `report/index.html` — and reproduces a representative subset of results without needing any out-of-band knowledge.
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 
@@ -134,7 +134,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-03-PLAN.md — Aggregator integration: multi-run REPORT.md decoration + sidecar image_size_mb backfill (REPR-03 rendering layer + Phase 4 D-10 closure)
+- [x] 05-03-PLAN.md — Aggregator integration: multi-run REPORT.md decoration + sidecar image_size_mb backfill (REPR-03 rendering layer + Phase 4 D-10 closure)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -151,4 +151,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Scenario Fan-Out | 3/3 | Complete   | 2026-05-18 |
 | 3. Docker Matrix & Local Orchestration | 3/5 | In Progress|  |
 | 4. Aggregator & Dashboard | 3/3 | Complete    | 2026-05-19 |
-| 5. CI, Image-Size Gate & Public Polish | 2/4 | In Progress|  |
+| 5. CI, Image-Size Gate & Public Polish | 3/4 | In Progress|  |
