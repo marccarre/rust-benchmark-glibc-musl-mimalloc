@@ -305,3 +305,67 @@ aggregate:
 # / loader regression before push.
 aggregate-smoke:
     cargo test --release -p alloc-bench-aggregator --test smoke
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 5: CI recipes (D-13, D-19, RESEARCH §Pattern 4)
+# ──────────────────────────────────────────────────────────────────────
+
+# CI variant of bench-cell: build + dive-check + 3 seeded runs + meta.json
+# sidecar. Used by the GHA matrix workflow's bench-matrix job (Phase 5
+# D-13 / D-19, RESEARCH §Pattern 4). The 3-seed loop matches CONTEXT.md
+# `<specifics>` ¶2 (`--seed 1`, `--seed 2`, `--seed 3`); the meta.json
+# sidecar carries `image_size_bytes` + `image_size_mb` so the aggregator
+# can populate the Docker runtimes table without modifying the locked v1
+# JSON schema (D-14 / D-20). Cgroup / cpuset / memory invariants are
+# Phase 3 D-15 locked (4 vCPUs, 4 GiB memory, cpuset 0-3).
+#
+# Usage:
+#   just ci-bench-cell debian-slim ptmalloc   # → results/ptmalloc-debian-slim-seed{1,2,3}.json + meta/ptmalloc-debian-slim.json
+#   just ci-bench-cell alpine jemalloc        # → results/jemalloc-alpine-seed{1,2,3}.json     + meta/jemalloc-alpine.json
+ci-bench-cell env alloc:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just build {{env}} {{alloc}}
+    just dive-check {{env}} {{alloc}}
+    mkdir -p results meta
+    chmod 0777 results
+    SIZE_BYTES=$(docker image inspect alloc-bench:{{alloc}}-{{env}} --format '{{ "{{" }}.Size{{ "}}" }}')
+    SIZE_MB=$(awk "BEGIN { printf \"%.2f\", $SIZE_BYTES / 1024 / 1024 }")
+    jq -n --argjson b "$SIZE_BYTES" --argjson m "$SIZE_MB" \
+      '{
+         alloc:            "{{alloc}}",
+         env:              "{{env}}",
+         image_size_bytes: $b,
+         image_size_mb:    $m,
+         captured_at:      now | todate
+       }' > meta/{{alloc}}-{{env}}.json
+    for seed in 1 2 3; do
+      docker run --rm \
+        --platform linux/amd64 \
+        --cpus=4 --memory=4g --cpuset-cpus=0-3 \
+        -v "$(pwd)/results:/out" \
+        alloc-bench:{{alloc}}-{{env}} \
+        run-all --output /out/{{alloc}}-{{env}}-seed${seed}.json --seed ${seed}
+    done
+
+# CI sanity gate — fmt + clippy + dce-check on a clean tree. Mirrors the
+# prek pre-commit hook so CI catches the same regressions before invoking
+# the matrix. Wired into the GHA `pre-bench` job (Phase 5 D-19).
+#
+# Usage:
+#   just ci-validate                          # runs all three gates sequentially
+ci-validate:
+    cargo fmt --all --check
+    cargo clippy --workspace --all-targets -- -D warnings
+    just dce-check system
+
+# STUB — Plan 03 implements the body. Phase 5 D-13 / RESEARCH §Pattern 4
+# (the meta.json merge step uses the `--meta` flag added by Plan 03's
+# main.rs extension). The stub exists so Plan 02's bench.yml workflow
+# has a recipe to call; Plan 03 replaces the body with the real
+# aggregator invocation.
+#
+# Usage:
+#   just ci-aggregate                         # exits non-zero with stderr message until Plan 03 lands
+ci-aggregate:
+    @echo "ci-aggregate: Plan 03 implements this recipe" >&2 && exit 1
