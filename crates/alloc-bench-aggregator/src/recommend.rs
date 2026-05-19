@@ -21,13 +21,6 @@
 //!     channel-heavy → contention → cpu-bound → fragmentation-prone →
 //!     memory-bound → web-ser-de.
 //!
-//! `#![allow(dead_code)]` covers the brief Task-2 → Task-3 window: this
-//! module ships with full unit-test coverage but is not yet imported by
-//! markdown.rs; Task 3 wires the imports in. Removing the attribute then
-//! is optional — every public + private item is exercised by the tests.
-
-#![allow(dead_code)]
-
 use std::collections::BTreeMap;
 
 use alloc_bench_core::output::Run;

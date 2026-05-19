@@ -142,7 +142,12 @@ fn aggregator_emits_html_and_markdown_against_fixtures() {
         md.contains("# alloc-bench REPORT"),
         "REPORT.md missing top-level H1"
     );
-    assert!(md.contains("## Runs"), "REPORT.md missing ## Runs section");
+    // Plan 03 replaced the Plan-01 `## Runs` bullet section with per-scenario
+    // allocator comparison tables. Anchor on the Plan-03 emit set instead.
+    assert!(
+        md.contains("## Docker runtimes"),
+        "REPORT.md missing ## Docker runtimes section"
+    );
     assert!(
         md.contains("<!-- schema_version: 1"),
         "REPORT.md missing schema_version comment"

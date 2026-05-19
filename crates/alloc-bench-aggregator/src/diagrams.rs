@@ -15,15 +15,6 @@
 //! text edge labels, server-side renderer (GitHub / VS Code preview); we
 //! do NOT bundle a Mermaid runtime in `report/index.html`.
 //!
-//! `#[allow(dead_code)]` covers the brief Task-1 → Task-3 window: this
-//! module ships first (constants + tests) so the build stays green; Task 3
-//! wires `markdown.rs` to consume `ALL_DIAGRAMS`, at which point all four
-//! constants become reachable from `main.rs`. The allow attribute can be
-//! removed in Task 3 once the imports are in place; leaving it does no
-//! harm because the unit tests in this file already exercise every const.
-
-#![allow(dead_code)]
-
 /// Source: https://en.wikipedia.org/wiki/C_dynamic_memory_allocation
 pub const PTMALLOC_DIAGRAM: &str = r#"
 ```mermaid
