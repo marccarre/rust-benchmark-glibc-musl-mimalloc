@@ -33,6 +33,7 @@ use anyhow::{Context, Result};
 use crate::diagrams::ALL_DIAGRAMS;
 use crate::html::is_suspect;
 use crate::loader::{CellMeta, LoadOutcome};
+use crate::multi_run::{aggregate as mr_aggregate, is_high_variance, MultiRunStats};
 use crate::recommend::recommendations;
 
 /// Public entry point — write `report/REPORT.md` against the loaded
@@ -86,10 +87,18 @@ fn emit_header(buf: &mut String, outcome: &LoadOutcome) {
     let _ = writeln!(buf);
 }
 
-/// Per-scenario allocator comparison tables (D-09 / AGG-04).
+/// Per-scenario allocator comparison tables (D-09 / AGG-04 / D-11 / D-12).
+///
 /// One section per scenario in alphabetical order; rows alphabetical by
-/// (allocator, env_label); winner row prefixed `**✓ {alloc}**`; suspect
-/// throughput cells get an italic note appended.
+/// (allocator, env_label); winner row prefixed `**✓ {alloc}**`.
+///
+/// Multi-run decoration (D-11): when ≥2 runs share an `(alloc, env, scenario)`
+/// triple, the throughput cell renders as `{median} ({min}..{max}, CV {N}%)`
+/// with optional `⚠ high variance` (CV > 10%) and `⚠ suspect` flags
+/// concatenated. When the cell has fewer than 2 runs, falls back to the
+/// existing single-value `{:.1} {unit}` format with the suspect-note
+/// italic — preserving the Phase-4 byte-identical-output contract for
+/// every existing single-run-per-cell fixture.
 fn emit_per_scenario_tables(buf: &mut String, runs: &[Run]) {
     // BTreeMap → alphabetical scenario iteration.
     let mut by_scenario: BTreeMap<&str, Vec<&Run>> = BTreeMap::new();
@@ -101,6 +110,19 @@ fn emit_per_scenario_tables(buf: &mut String, runs: &[Run]) {
     }
 
     for (scenario_name, scenario_runs) in by_scenario.iter() {
+        // D-11 grouping pre-pass: build a BTreeMap<(alloc, env), Vec<f64>>
+        // of throughput samples for this scenario. Used to decide whether
+        // to emit the multi-run cell shape vs the single-value fallback.
+        // BTreeMap is mandatory for alphabetical-iteration / byte-identical
+        // output (RESEARCH §Pitfall 5).
+        let mut by_cell: BTreeMap<(String, String), Vec<f64>> = BTreeMap::new();
+        for r in scenario_runs.iter() {
+            by_cell
+                .entry((r.build.allocator.clone(), env_label(&r.env).to_string()))
+                .or_default()
+                .push(r.metrics.ticks_per_s);
+        }
+
         let _ = writeln!(buf, "## {scenario_name}");
         let _ = writeln!(buf);
         let _ = writeln!(
@@ -109,51 +131,64 @@ fn emit_per_scenario_tables(buf: &mut String, runs: &[Run]) {
         );
         let _ = writeln!(buf, "|---|---|---|---|---|---|---|");
 
-        // Find the winner BEFORE sorting so we track the row by index, not
-        // by allocator name (multiple envs of the same allocator must not
-        // double-mark).
-        let mut sorted: Vec<&Run> = scenario_runs.to_vec();
-        sorted.sort_by(|a, b| {
-            let ka = (a.build.allocator.as_str(), env_label(&a.env));
-            let kb = (b.build.allocator.as_str(), env_label(&b.env));
-            ka.cmp(&kb)
-        });
+        // Build a per-cell BTreeMap<(alloc, env), &Run> for emission rows.
+        // Pick the FIRST run per (alloc, env) tuple (deterministic via
+        // BTreeMap ordering once scenario_runs is sorted alpha) so we
+        // don't emit duplicate rows when a fixture has multiple seeds.
+        let mut row_keys: BTreeMap<(String, String), &Run> = BTreeMap::new();
+        for r in scenario_runs.iter() {
+            let key = (r.build.allocator.clone(), env_label(&r.env).to_string());
+            row_keys.entry(key).or_insert(r);
+        }
 
-        // Winner index in `sorted`: maximum metrics.ticks_per_s; alphabetical
-        // tiebreak via stable iteration (we already sorted by alloc·env).
-        //
-        // WR-01 (Phase-04 review): use forward-iteration max-finder with a
-        // STRICT `>` so we keep the FIRST-seen winner on a tie. The
-        // previous `Iterator::max_by` returned the LAST equal element
-        // (per its documented contract), which would split-brain with
-        // `recommend.rs::pick_rationale_scenario` (alphabetically-FIRST
-        // on ties) and the dashboard's `renderReportMirrorTable`
-        // (also alphabetically-FIRST on ties).
+        // Winner index in iteration order: maximum CENTRAL TENDENCY (median
+        // when ≥2 runs, mean fallback when n<2). The strict `>` keeps the
+        // FIRST-seen winner on a tie, matching `recommend::pick_rationale_scenario`
+        // and the dashboard's `renderReportMirrorTable`.
+        let row_vec: Vec<((String, String), &Run)> =
+            row_keys.iter().map(|(k, v)| (k.clone(), *v)).collect();
         let mut winner_idx: Option<usize> = None;
-        for (i, r) in sorted.iter().enumerate() {
-            let tps = r.metrics.ticks_per_s;
+        for (i, (key, _)) in row_vec.iter().enumerate() {
+            let tps = central_tendency(by_cell.get(key));
             match winner_idx {
-                Some(j)
-                    if tps
-                        .partial_cmp(&sorted[j].metrics.ticks_per_s)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        != std::cmp::Ordering::Greater => {}
-                _ => winner_idx = Some(i),
+                Some(j) => {
+                    let prev = central_tendency(by_cell.get(&row_vec[j].0));
+                    if tps > prev {
+                        winner_idx = Some(i);
+                    }
+                }
+                None => winner_idx = Some(i),
             }
         }
 
-        for (idx, r) in sorted.iter().enumerate() {
+        for (idx, (key, r)) in row_vec.iter().enumerate() {
             let unit = r.scenario.unit.as_deref().unwrap_or("ticks/s");
             let alloc_cell = if Some(idx) == winner_idx {
                 format!("**\u{2713} {}**", r.build.allocator)
             } else {
                 r.build.allocator.clone()
             };
-            let mut throughput_cell = format!("{:.1} {}", r.metrics.ticks_per_s, unit);
-            if let Some(reason) = suspect_reason(&r.harness) {
-                throughput_cell.push(' ');
-                throughput_cell.push_str(suspect_note(&reason));
-            }
+            let suspect = suspect_reason(&r.harness).is_some();
+            // D-11 / D-12: multi-run shape when ≥2 runs in this cell.
+            let throughput_cell = if let Some(samples) = by_cell.get(key) {
+                if let Some(stats) = mr_aggregate(samples) {
+                    format_throughput_cell(&stats, suspect)
+                } else {
+                    let mut s = format!("{:.1} {}", r.metrics.ticks_per_s, unit);
+                    if let Some(reason) = suspect_reason(&r.harness) {
+                        s.push(' ');
+                        s.push_str(suspect_note(&reason));
+                    }
+                    s
+                }
+            } else {
+                let mut s = format!("{:.1} {}", r.metrics.ticks_per_s, unit);
+                if let Some(reason) = suspect_reason(&r.harness) {
+                    s.push(' ');
+                    s.push_str(suspect_note(&reason));
+                }
+                s
+            };
             let _ = writeln!(
                 buf,
                 "| {alloc} | {tps} | {p50} ns | {p95} ns | {p99} ns | {p999} ns | {rss} kB |",
@@ -168,6 +203,52 @@ fn emit_per_scenario_tables(buf: &mut String, runs: &[Run]) {
         }
         let _ = writeln!(buf);
     }
+}
+
+/// Central tendency for a set of throughput samples: median when ≥2 runs
+/// (matching D-11), mean fallback for n<2 so winner-picking on existing
+/// single-run-per-cell fixtures is byte-stable. Returns `0.0` when the
+/// samples slice is empty (only possible if the caller passed `None`).
+fn central_tendency(samples: Option<&Vec<f64>>) -> f64 {
+    let Some(samples) = samples else { return 0.0 };
+    if samples.is_empty() {
+        return 0.0;
+    }
+    if let Some(s) = mr_aggregate(samples) {
+        s.median
+    } else {
+        samples.iter().sum::<f64>() / samples.len() as f64
+    }
+}
+
+/// Format a single throughput cell with multi-run decoration:
+///   "100 (95..110, CV 5%)"
+/// or with high-variance flag (CV > 10%):
+///   "100 (90..130, CV 19% ⚠ high variance)"
+/// or both flags concatenated (per CONTEXT.md `<specifics>` ¶5):
+///   "100 (90..130, CV 19% ⚠ high variance ⚠ suspect)"
+/// or with undefined CV (mean ≈ 0):
+///   "0 (0..0, CV —)"
+///
+/// Output shape is canonical per RESEARCH §"Code Examples — Multi-run
+/// aggregator integration" (lines 956-967 of 05-RESEARCH.md): all numbers
+/// `{:.0}` rounded; CV `{:.0}%`; em-dash `\u{2014}` for undefined CV;
+/// variance flag `\u{26A0} high variance`; suspect flag `\u{26A0} suspect`.
+pub(crate) fn format_throughput_cell(s: &MultiRunStats, suspect: bool) -> String {
+    let cv_str = match s.cv_pct {
+        Some(cv) => format!("CV {cv:.0}%"),
+        None => "CV \u{2014}".to_string(),
+    };
+    let variance_flag = if is_high_variance(s) {
+        " \u{26A0} high variance"
+    } else {
+        ""
+    };
+    let suspect_flag = if suspect { " \u{26A0} suspect" } else { "" };
+    format!(
+        "{:.0} ({:.0}..{:.0}, {}{}{})",
+        s.median, s.min, s.max, cv_str, variance_flag, suspect_flag
+    )
 }
 
 /// Docker runtimes table (D-10 / AGG-05 / D-13).
@@ -550,6 +631,229 @@ mod tests {
         assert_eq!(
             a_body, b_body,
             "REPORT.md bodies differ after stripping timestamp"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // D-11 / D-12 — multi-run rendering (Plan 03 Task 2 additions).
+    //
+    // Each test pins one row of the contract table from CONTEXT.md
+    // `<specifics>` ¶5 + RESEARCH §"Code Examples — Multi-run aggregator
+    // integration" lines 956-967. The fixture set is synthetic (built via
+    // `make_run`) so the assertions don't depend on the multi_run/seed-*
+    // fixture files (covered by the integration tests in tests/smoke.rs).
+    // ---------------------------------------------------------------------
+
+    /// D-11 / RESEARCH §"Code Examples": format_throughput_cell pin —
+    /// canonical low-CV shape `{median:.0} ({min:.0}..{max:.0}, CV {N}%)`.
+    #[test]
+    fn format_throughput_cell_low_cv_no_flags() {
+        let stats = MultiRunStats {
+            n: 3,
+            mean: 105.0,
+            median: 100.0,
+            min: 95.0,
+            max: 110.0,
+            stddev: 4.76,
+            cv_pct: Some(4.76),
+        };
+        let cell = format_throughput_cell(&stats, false);
+        assert_eq!(cell, "100 (95..110, CV 5%)", "got {cell:?}");
+    }
+
+    /// D-12: when `cv_pct > 10.0`, the variance flag `⚠ high variance`
+    /// is appended after the CV percentage. No suspect flag here.
+    #[test]
+    fn format_throughput_cell_high_variance_flag_appended() {
+        let stats = MultiRunStats {
+            n: 3,
+            mean: 106.67,
+            median: 100.0,
+            min: 90.0,
+            max: 130.0,
+            stddev: 20.82,
+            cv_pct: Some(15.3),
+        };
+        let cell = format_throughput_cell(&stats, false);
+        assert_eq!(
+            cell, "100 (90..130, CV 15% \u{26A0} high variance)",
+            "got {cell:?}"
+        );
+    }
+
+    /// CONTEXT.md `<specifics>` ¶5: when both flags fire (suspect AND
+    /// high-variance), they are concatenated in this exact order:
+    /// `... CV {N}% ⚠ high variance ⚠ suspect`.
+    #[test]
+    fn format_throughput_cell_both_flags_concatenated() {
+        let stats = MultiRunStats {
+            n: 3,
+            mean: 106.67,
+            median: 100.0,
+            min: 90.0,
+            max: 130.0,
+            stddev: 20.82,
+            cv_pct: Some(15.3),
+        };
+        let cell = format_throughput_cell(&stats, true);
+        assert_eq!(
+            cell, "100 (90..130, CV 15% \u{26A0} high variance \u{26A0} suspect)",
+            "got {cell:?}"
+        );
+    }
+
+    /// D-11 + Wikipedia near-zero edge case: when `cv_pct` is `None`
+    /// (mean ≈ 0), the CV cell renders as em-dash `\u{2014}`.
+    #[test]
+    fn format_throughput_cell_undefined_cv_em_dash() {
+        let stats = MultiRunStats {
+            n: 3,
+            mean: 0.0,
+            median: 0.0,
+            min: 0.0,
+            max: 0.0,
+            stddev: 0.0,
+            cv_pct: None,
+        };
+        let cell = format_throughput_cell(&stats, false);
+        assert_eq!(cell, "0 (0..0, CV \u{2014})", "got {cell:?}");
+    }
+
+    /// D-11: per-scenario table emits the multi-run cell shape (with the
+    /// `(min..max, CV N%)` substring) when ≥2 runs share an
+    /// `(alloc, env, scenario)` triple. Multithread fixture: seed values
+    /// 100/110/105 → median=105, min=95... wait, this synthesis uses
+    /// 100/110/105 → min=100, max=110, CV ≈ 4.76%. Anchor `(100..110, CV`.
+    #[test]
+    fn per_scenario_table_emits_multi_run_cell_when_three_runs_share_cell() {
+        let runs = vec![
+            make_run(
+                "jemalloc",
+                "multithread",
+                100.0,
+                50_000,
+                5.0,
+                Some("alpine"),
+            ),
+            make_run(
+                "jemalloc",
+                "multithread",
+                110.0,
+                50_000,
+                5.0,
+                Some("alpine"),
+            ),
+            make_run(
+                "jemalloc",
+                "multithread",
+                105.0,
+                50_000,
+                5.0,
+                Some("alpine"),
+            ),
+        ];
+        let mut buf = String::new();
+        emit_per_scenario_tables(&mut buf, &runs);
+        assert!(
+            buf.contains("(100..110, CV"),
+            "expected multi-run shape `(100..110, CV` in:\n{buf}"
+        );
+    }
+
+    /// D-12: per-scenario table flags `⚠ high variance` for cells with
+    /// CV > 10%. Cpu-bound fixture: 100/130/90 → mean 106.67, CV ≈ 19.5%.
+    #[test]
+    fn per_scenario_table_emits_high_variance_flag_for_volatile_cell() {
+        let runs = vec![
+            make_run("jemalloc", "cpu-bound", 100.0, 50_000, 5.0, Some("alpine")),
+            make_run("jemalloc", "cpu-bound", 130.0, 50_000, 5.0, Some("alpine")),
+            make_run("jemalloc", "cpu-bound", 90.0, 50_000, 5.0, Some("alpine")),
+        ];
+        let mut buf = String::new();
+        emit_per_scenario_tables(&mut buf, &runs);
+        assert!(
+            buf.contains("\u{26A0} high variance"),
+            "expected `⚠ high variance` glyph in:\n{buf}"
+        );
+    }
+
+    /// D-13: `emit_docker_runtimes_table` populates `image_size_mb` from
+    /// the meta sidecar when one matches the row's docker_image label.
+    /// Sidecar carries `image_size_mb: 26.55` → cell shows `26.6` (Rust's
+    /// `{:.1}` rounds the IEEE-754 representation of `26.55` half-up;
+    /// see deviation note in 05-03-SUMMARY.md). We anchor on the
+    /// invariant `26.` prefix so the test is stable across reasonable
+    /// formatting choices, and add an exact-match assertion against the
+    /// canonical Rust output for regression visibility.
+    #[test]
+    fn docker_runtimes_table_populates_image_size_mb_from_meta() {
+        let runs = vec![make_run(
+            "jemalloc",
+            "cpu-bound",
+            100.0,
+            50_000,
+            5.0,
+            Some("alloc-bench:jemalloc-alpine"),
+        )];
+        let mut metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        metas.insert(
+            ("jemalloc".to_string(), "alpine".to_string()),
+            CellMeta {
+                alloc: "jemalloc".to_string(),
+                env: "alpine".to_string(),
+                image_size_bytes: 27_845_632,
+                image_size_mb: 26.55,
+                build_time_s: Some(142.3),
+                captured_at: Some("2026-05-19T15:30:42Z".to_string()),
+            },
+        );
+        let mut buf = String::new();
+        emit_docker_runtimes_table(&mut buf, &runs, &metas);
+        // Stable anchor: `26.` — independent of the `{:.1}` rounding
+        // direction (5→6 vs 5→5 across language runtimes).
+        assert!(
+            buf.contains("26."),
+            "expected `26.` (image_size_mb formatted) in:\n{buf}"
+        );
+        // Exact-match for Rust's canonical `{:.1}` of `26.55_f64`.
+        assert!(
+            buf.contains("| alloc-bench:jemalloc-alpine | 26.6 |"),
+            "expected canonical Rust formatting `| ... | 26.6 |` in:\n{buf}"
+        );
+        // Footnote should switch to the D-13 wording when metas non-empty.
+        assert!(
+            buf.contains("populated from CI sidecar"),
+            "expected D-13 footnote wording in:\n{buf}"
+        );
+    }
+
+    /// D-13 byte-identical-output contract preservation: when `metas` is
+    /// empty (default `--meta=""` invocation), the existing Phase-4
+    /// em-dash output and footnote are produced verbatim.
+    #[test]
+    fn docker_runtimes_table_byte_stable_when_metas_empty() {
+        let runs = vec![make_run(
+            "jemalloc",
+            "cpu-bound",
+            100.0,
+            50_000,
+            5.0,
+            Some("img-a"),
+        )];
+        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        let mut buf = String::new();
+        emit_docker_runtimes_table(&mut buf, &runs, &metas);
+        assert!(
+            buf.contains("| img-a | \u{2014} | \u{2014} | \u{2014} |"),
+            "expected Phase-4 em-dash row in:\n{buf}"
+        );
+        assert!(
+            buf.contains("Phase 5 CI via docker inspect"),
+            "expected original Phase-5 backfill footnote when metas empty in:\n{buf}"
+        );
+        assert!(
+            !buf.contains("populated from CI sidecar"),
+            "did not expect D-13 footnote when metas empty:\n{buf}"
         );
     }
 }

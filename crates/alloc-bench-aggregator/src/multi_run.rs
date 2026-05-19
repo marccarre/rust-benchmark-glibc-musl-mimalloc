@@ -42,14 +42,11 @@ use serde::Serialize;
 /// NEVER in the v1 JSON schema (CONTEXT.md D-14 / D-20).
 ///
 /// Plan 03 wires `MultiRunStats`, `aggregate`, and `is_high_variance` into
-/// markdown.rs (per-scenario throughput-cell decoration), recommend.rs
-/// (median-with-mean-fallback central tendency), and html.rs (Plotly
-/// `error_y` whiskers + ⚠ high variance legend label). The
-/// `#[allow(dead_code)]` annotations stay in place until Plan-03 Tasks
-/// 2 / 3 / 4 land their respective imports (each annotation removed
-/// alongside the import in the same commit).
+/// markdown.rs (per-scenario throughput-cell decoration + central tendency
+/// for winner-picking), recommend.rs (median-with-mean-fallback central
+/// tendency), and html.rs (Plotly `error_y` whiskers + ⚠ high variance
+/// legend label).
 #[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
 pub struct MultiRunStats {
     pub n: usize,
     pub mean: f64,
@@ -66,7 +63,6 @@ pub struct MultiRunStats {
 /// Compute multi-run statistics. Returns `None` if `samples` has fewer than
 /// 2 values (sample stddev requires n ≥ 2) or if any sample is non-finite
 /// (NaN-poisoning guard — see `<threat_model>` T-05-03 in PLAN.md).
-#[allow(dead_code)] // Wired in by Plan-03 Task 2 (markdown.rs) and Task 3 (recommend.rs).
 pub fn aggregate(samples: &[f64]) -> Option<MultiRunStats> {
     if samples.len() < 2 || samples.iter().any(|x| !x.is_finite()) {
         return None;
@@ -118,7 +114,6 @@ pub fn aggregate(samples: &[f64]) -> Option<MultiRunStats> {
 }
 
 /// CONTEXT.md D-12: high-variance flag — CV > 10%.
-#[allow(dead_code)] // Wired in by Plan-03 Task 2 (markdown.rs `⚠ high variance` glyph).
 pub fn is_high_variance(stats: &MultiRunStats) -> bool {
     matches!(stats.cv_pct, Some(cv) if cv > 10.0)
 }

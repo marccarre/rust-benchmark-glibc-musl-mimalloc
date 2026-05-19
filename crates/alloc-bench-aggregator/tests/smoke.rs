@@ -494,20 +494,26 @@ fn aggregator_report_md_contains_winner_prefix() {
     );
 }
 
-/// AGG-04: REPORT.md surfaces both suspect-predicate italic notes when
-/// run against the Task-4 augmented jemalloc-alpine fixture. Run 1 has
-/// samples_count=5000 → low-samples; Run 3 has warmup_duration_s=2.0 →
-/// short-warmup.
+/// AGG-04 (Plan-03 update): REPORT.md surfaces the suspect signal when run
+/// against the Phase-4 jemalloc-alpine fixture. Plan 03 introduced multi-run
+/// cell collapsing — the existing fixture has TWO multithread+jemalloc-alpine
+/// runs (one low-samples, one short-warmup) which now collapse into a SINGLE
+/// multi-run cell with a `⚠ suspect` flag. The Phase-4 single-cell suspect
+/// notes (`*(⚠ suspect: low samples)*` / `*(⚠ suspect: short warmup)*`) still
+/// emit when a cell has only ONE run.
+///
+/// Plan-03 contract: the suspect signal must surface SOMEWHERE — either as
+/// the legacy italic note (single-run cells) OR as the new multi-run flag
+/// (≥2-run cells). We assert at least one shape is present.
 #[test]
 fn aggregator_report_md_contains_suspect_italic_notes() {
     let (_dir, md) = run_aggregator_and_read_markdown();
+    let legacy_low = md.contains("*(\u{26A0} suspect: low samples)*");
+    let legacy_short = md.contains("*(\u{26A0} suspect: short warmup)*");
+    let multi_run_flag = md.contains("\u{26A0} suspect)");
     assert!(
-        md.contains("*(\u{26A0} suspect: low samples)*"),
-        "REPORT.md missing low-samples italic note"
-    );
-    assert!(
-        md.contains("*(\u{26A0} suspect: short warmup)*"),
-        "REPORT.md missing short-warmup italic note"
+        legacy_low || legacy_short || multi_run_flag,
+        "REPORT.md missing any suspect signal (legacy italic notes or multi-run `⚠ suspect` flag):\n{md}"
     );
 }
 
