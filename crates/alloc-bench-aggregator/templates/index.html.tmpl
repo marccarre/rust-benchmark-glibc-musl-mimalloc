@@ -464,6 +464,12 @@ function makeThroughputTraces(filtered) \{
     const legendName = alloc
       + (anySuspect ? ' ⚠ suspect' : '')
       + (anyHighVariance ? ' ⚠ high variance' : '');
+    // WR-05 (Phase-5 review): single-run cells push 0 to yMinus/yPlus.
+    // Plotly renders zero-length error bars as small ticks on the bar's
+    // centerline, so mixed dashboards (some cells multi-run, some not)
+    // showed inconsistent appearance. Gate `visible` on whether any
+    // error-bar value is non-zero so single-run cells render flat bars.
+    const hasErrorBars = yPlus.some(v => v > 0) || yMinus.some(v => v > 0);
     traces.push(\{
       type: 'bar',
       name: legendName,
@@ -474,7 +480,7 @@ function makeThroughputTraces(filtered) \{
         symmetric: false,
         array: yPlus,
         arrayminus: yMinus,
-        visible: true,
+        visible: hasErrorBars,
         color: '#1F2328',
         thickness: 1.0,
         width: 4,
