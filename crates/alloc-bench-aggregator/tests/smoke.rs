@@ -237,3 +237,138 @@ fn aggregator_all_files_fail_still_exits_zero_with_empty_report() {
         "REPORT.md missing bad.json in skipped inputs"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Plan 02 Task 3: visual-contract smoke tests
+// ---------------------------------------------------------------------------
+//
+// Each of the six tests below drives the aggregator against the committed
+// fixtures, reads `index.html`, and asserts substring presence/absence to
+// gate the UI-SPEC visual contract. They are additive — the four Plan-01
+// tests above remain untouched so regressions surface separately.
+
+/// Run the aggregator against the committed Plan-01 fixtures and return
+/// the rendered index.html as a String. Factored out so the six new
+/// tests share the setup; the four Plan-01 tests still inline the same
+/// pattern to keep churn minimal.
+fn run_aggregator_against_fixtures() -> (tempfile::TempDir, String) {
+    let out_dir = tempdir().expect("tempdir");
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let pattern = format!("{}/*.json", fixtures.display());
+    let mut cmd = Command::cargo_bin("alloc-bench-aggregator").expect("cargo bin");
+    cmd.args(["--input"])
+        .arg(&pattern)
+        .args(["--output"])
+        .arg(out_dir.path());
+    cmd.assert().success();
+    let html = std::fs::read_to_string(out_dir.path().join("index.html")).expect("read index.html");
+    (out_dir, html)
+}
+
+/// Behavior 1: rendered HTML contains all four chart trace-builder
+/// identifiers (`makeThroughputTraces`, `makeLatencyHeatmap`,
+/// `makeRssLines`, `makeDiffBars`). Proves Task 2's chart wiring is
+/// shipped end-to-end.
+#[test]
+fn aggregator_html_contains_four_chart_builders() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains("makeThroughputTraces"),
+        "expected makeThroughputTraces in index.html"
+    );
+    assert!(
+        html.contains("makeLatencyHeatmap"),
+        "expected makeLatencyHeatmap in index.html"
+    );
+    assert!(
+        html.contains("makeRssLines"),
+        "expected makeRssLines in index.html"
+    );
+    assert!(
+        html.contains("makeDiffBars"),
+        "expected makeDiffBars in index.html"
+    );
+}
+
+/// Behavior 2: rendered HTML uses `Plotly.react` for re-renders (>=4
+/// invocations, one per chart card) and contains 0 instances of
+/// `Plotly.newPlot` (RESEARCH §Anti-Patterns: NEVER use newPlot for
+/// re-renders — it re-mounts the chart DOM, causing flicker; react
+/// diffs in place).
+#[test]
+fn aggregator_html_uses_plotly_react_not_newplot() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    let react_count = html.matches("Plotly.react").count();
+    assert!(
+        react_count >= 4,
+        "expected >=4 Plotly.react invocations, got {react_count}"
+    );
+    assert!(
+        !html.contains("Plotly.newPlot"),
+        "Plotly.newPlot must not appear — use Plotly.react for re-renders"
+    );
+}
+
+/// Behavior 3: the suspect ⚠ glyph (U+26A0 WARNING SIGN) appears at
+/// least once in the rendered HTML. Plan-01 fixtures include
+/// jemalloc-alpine with samples_count=5_000 → suspect → server-side
+/// bootstrap embeds `⚠ jemalloc·alloc-bench:jemalloc-alpine` in the
+/// SUSPECT_PAIRS array per Task 1.
+#[test]
+fn aggregator_html_marks_suspect_allocator_with_warning_glyph() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains('\u{26A0}'),
+        "expected ⚠ (U+26A0) in index.html — suspect-fixture run should surface"
+    );
+}
+
+/// Behavior 4: rendered HTML carries the exact Viridis palette hex codes
+/// from UI-SPEC line 92 (#440154 ptmalloc, #3B528B mallocng, #21908C
+/// jemalloc, #5DC863 mimalloc). Colorblind-safe palette in use across
+/// CSS variables AND the inline ALLOC_COLORS JS map.
+#[test]
+fn aggregator_html_uses_viridis_palette_per_ui_spec() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(html.contains("#440154"), "missing Viridis stop ptmalloc");
+    assert!(html.contains("#3B528B"), "missing Viridis stop mallocng");
+    assert!(html.contains("#21908C"), "missing Viridis stop jemalloc");
+    assert!(html.contains("#5DC863"), "missing Viridis stop mimalloc");
+}
+
+/// Behavior 5: rendered HTML contains the empty-filter copy from
+/// UI-SPEC line 155 verbatim. Lockdown the Copywriting Contract so a
+/// later refactor can't silently drift the wording.
+#[test]
+fn aggregator_html_includes_empty_filter_copy() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains("No data in current filter"),
+        "missing empty-filter heading copy"
+    );
+    assert!(
+        html.contains("Select at least one scenario, environment, and allocator to render charts."),
+        "missing empty-filter body copy"
+    );
+}
+
+/// Behavior 6: rendered HTML's bootstrap function references the
+/// canonical default-A/B index expressions (UI-SPEC line 256). We
+/// assert the substrings rather than parse the JS so the test is
+/// resilient to whitespace/format changes.
+#[test]
+fn aggregator_html_bootstraps_default_ab_pickers() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains("ALLOCATORS[0]"),
+        "missing default A allocator (ALLOCATORS[0]) in bootstrap"
+    );
+    assert!(
+        html.contains("ALLOCATORS[1]"),
+        "missing default B allocator index (ALLOCATORS[1]) in bootstrap"
+    );
+    assert!(
+        html.contains("ENVS[0]"),
+        "missing default A/B env (ENVS[0]) in bootstrap"
+    );
+}
