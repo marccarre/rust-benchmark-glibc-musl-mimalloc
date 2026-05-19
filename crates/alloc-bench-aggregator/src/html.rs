@@ -1,20 +1,29 @@
 //! Render `report/index.html` via tinytemplate against
 //! `templates/index.html.tmpl` (D-01, D-02 / RESEARCH §Pattern 1).
 //!
-//! Plan 01 ships the skeleton: pinned Plotly 2.35.3 CDN tag with SRI
+//! Plan 01 shipped the skeleton: pinned Plotly 2.35.3 CDN tag with SRI
 //! integrity, four `<div id="chart-*">` slots, the filter sidebar shell,
-//! and the inlined `RESULTS` array. Plan 02 fleshes out chart-trace
-//! construction + filter handlers; Plan 03 wires the A/B picker.
+//! and the inlined `RESULTS` array.
+//!
+//! Plan 02 augments `HtmlContext` with FOUR new JSON-string fields
+//! (`scenarios_json`, `envs_json`, `allocators_json`, `suspect_pairs_json`)
+//! that the template consumes to seed the multi-select / A/B-picker option
+//! lists at page load. The canonical D-07 suspect predicate
+//! (`samples_count < 10_000 || warmup_duration_s < 5.0`) lives here too
+//! (`is_suspect`); Plan 03's recommend.rs will reuse it.
 //!
 //! Pitfall 1 (RESEARCH): tinytemplate parses `{` as a value substitution.
 //! The template file MUST escape every literal `{` in CSS/JS bodies as
-//! `\{`. The single substitution placeholder is `{ results_json | unescaped }`.
+//! `\{`. Substitution placeholders include `{ results_json | unescaped }`,
+//! `{ scenarios_json | unescaped }`, `{ envs_json | unescaped }`,
+//! `{ allocators_json | unescaped }`, `{ suspect_pairs_json | unescaped }`.
 //! The `tinytemplate_compiles_index_template` test catches an unescaped
 //! `{` regression at `cargo test` time, not at runtime.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
-use alloc_bench_core::output::Run;
+use alloc_bench_core::output::{HarnessInfo, Run};
 use anyhow::{Context, Result};
 use tinytemplate::TinyTemplate;
 
@@ -34,11 +43,32 @@ pub(crate) const PLOTLY_CDN_URL: &str = "https://cdn.plot.ly/plotly-2.35.3.min.j
 pub(crate) const PLOTLY_SRI_HASH: &str =
     "sha384-MqL7Cy3itNqCI1Wlc926K0XhyRKJ/NMqTaytIIEB+QIdInOploxqRIHRKLlhPykM";
 
+/// Canonical D-07 suspect predicate. A run is suspect when its harness
+/// shipped fewer than 10 000 samples or warmed up for less than 5 s.
+/// Plan 03's `recommend.rs` is expected to import this exact function so
+/// the report and the dashboard agree on which runs are flagged.
+pub(crate) fn is_suspect(h: &HarnessInfo) -> bool {
+    h.samples_count < 10_000 || h.warmup_duration_s < 5.0
+}
+
 #[derive(serde::Serialize)]
 struct HtmlContext<'a> {
     /// Pre-serialized JSON. Rendered via `{ results_json | unescaped }` so
     /// tinytemplate doesn't HTML-escape the `<`/`>`/`&`/`"` inside the JSON.
     results_json: &'a str,
+    /// Sorted, de-duplicated list of scenario names (JSON-encoded). Seeds
+    /// the `#sel-scenarios` multi-select at page load.
+    scenarios_json: &'a str,
+    /// Sorted, de-duplicated list of env labels (JSON-encoded). Seeds
+    /// `#sel-envs` and the `#ab-*-env` single-selects.
+    envs_json: &'a str,
+    /// Sorted, de-duplicated list of allocator names (JSON-encoded). Seeds
+    /// `#sel-allocs` and the `#ab-*-alloc` single-selects.
+    allocators_json: &'a str,
+    /// Sorted, de-duplicated list of `{allocator}·{env}` keys for suspect
+    /// runs (JSON-encoded). The bootstrap script wraps this in a `Set`
+    /// and uses it to prefix option labels with `⚠ `.
+    suspect_pairs_json: &'a str,
     run_count: usize,
     cell_count: usize,
     timestamp_iso8601: &'a str,
@@ -53,17 +83,74 @@ pub fn write(outcome: &LoadOutcome, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Bundle of JSON-string fields derived from the runs vec. Holding the
+/// owned `String`s in a single struct keeps the render() lifetimes tidy
+/// (the `HtmlContext` borrows `&str` from this).
+struct BuiltContext {
+    results: String,
+    scenarios: String,
+    envs: String,
+    allocators: String,
+    suspect_pairs: String,
+}
+
+fn build_context(runs: &[Run]) -> Result<BuiltContext> {
+    // RESEARCH §Pitfall 2: use `to_string` (compact) — pretty-printed JSON
+    // bloats the inlined RESULTS by ~3× without reader benefit.
+    let results = serde_json::to_string(runs).context("serializing runs to JSON")?;
+
+    // PATTERNS §"Sorted-output / byte-identical-output pattern" — use
+    // `BTreeSet`, never `HashSet`, so iteration is alphabetical.
+    let scenarios: Vec<String> = runs
+        .iter()
+        .map(|r| r.scenario.name.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let envs: Vec<String> = runs
+        .iter()
+        .map(|r| env_label(&r.env).to_string())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let allocators: Vec<String> = runs
+        .iter()
+        .map(|r| r.build.allocator.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    // UI-SPEC line 128: separator is `·` (U+00B7 MIDDLE DOT).
+    let suspect_pairs: Vec<String> = runs
+        .iter()
+        .filter(|r| is_suspect(&r.harness))
+        .map(|r| format!("{}\u{00B7}{}", r.build.allocator, env_label(&r.env)))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+
+    Ok(BuiltContext {
+        results,
+        scenarios: serde_json::to_string(&scenarios).context("serializing scenarios to JSON")?,
+        envs: serde_json::to_string(&envs).context("serializing envs to JSON")?,
+        allocators: serde_json::to_string(&allocators).context("serializing allocators to JSON")?,
+        suspect_pairs: serde_json::to_string(&suspect_pairs)
+            .context("serializing suspect_pairs to JSON")?,
+    })
+}
+
 fn render(runs: &[Run]) -> Result<String> {
     let mut tt = TinyTemplate::new();
     tt.add_template("index", TEMPLATE)
         .context("compiling index.html.tmpl")?;
-    // RESEARCH §Pitfall 2: use `to_string` (compact) — pretty-printed JSON
-    // bloats the inlined RESULTS by ~3× without reader benefit.
-    let json = serde_json::to_string(runs).context("serializing runs to JSON")?;
+    let ctx_owned = build_context(runs)?;
     let timestamp = chrono::Utc::now().to_rfc3339();
     let cell_count = count_unique_cells(runs);
     let ctx = HtmlContext {
-        results_json: &json,
+        results_json: &ctx_owned.results,
+        scenarios_json: &ctx_owned.scenarios,
+        envs_json: &ctx_owned.envs,
+        allocators_json: &ctx_owned.allocators,
+        suspect_pairs_json: &ctx_owned.suspect_pairs,
         run_count: runs.len(),
         cell_count,
         timestamp_iso8601: &timestamp,
@@ -74,7 +161,6 @@ fn render(runs: &[Run]) -> Result<String> {
 }
 
 fn count_unique_cells(runs: &[Run]) -> usize {
-    use std::collections::BTreeSet;
     let mut set = BTreeSet::new();
     for r in runs {
         set.insert((r.build.allocator.as_str(), env_label(&r.env)));
@@ -90,20 +176,28 @@ mod tests {
     };
     use alloc_bench_core::SCHEMA_VERSION;
 
-    fn make_test_run() -> Run {
+    /// Builder used across the html.rs unit tests. Mirrors loader.rs's
+    /// helper but parameterizes alloc/env/scenario/samples so the new
+    /// context tests can exercise the suspect predicate explicitly.
+    fn make_test_run(
+        allocator: &str,
+        docker_image: Option<&str>,
+        scenario: &str,
+        samples_count: u64,
+    ) -> Run {
         Run {
             schema_version: SCHEMA_VERSION,
-            run_id: "test".into(),
+            run_id: format!("test-{allocator}-{scenario}"),
             env: Env {
                 os: "linux".into(),
                 os_version: "test".into(),
-                docker_image: None,
+                docker_image: docker_image.map(|s| s.to_string()),
                 cpu_model: "test-cpu".into(),
                 cpu_count: 1,
                 memory_total_kb: 1,
             },
             build: Build {
-                allocator: "system".into(),
+                allocator: allocator.into(),
                 rustc_version: "1.83.0".into(),
                 target_triple: "x86_64-unknown-linux-gnu".into(),
                 host_triple: "x86_64-unknown-linux-gnu".into(),
@@ -114,14 +208,14 @@ mod tests {
                 rustflags: "".into(),
             },
             scenario: ScenarioInfo {
-                name: "test".into(),
+                name: scenario.into(),
                 config: serde_json::json!({}),
                 unit: None,
             },
             harness: HarnessInfo {
                 warmup_duration_s: 5.0,
                 measurement_duration_s: 5.0,
-                samples_count: 50_000,
+                samples_count,
             },
             metrics: Metrics {
                 ticks_per_s: 100.0,
@@ -166,7 +260,7 @@ mod tests {
     /// the JSON, not `&#x3A;` / `&#x5B;`.
     #[test]
     fn render_inlines_results_json_unescaped() {
-        let run = make_test_run();
+        let run = make_test_run("system", None, "test", 50_000);
         let html = render(&[run]).expect("render");
         assert!(
             html.contains("\"schema_version\":1"),
@@ -179,6 +273,69 @@ mod tests {
         assert!(
             html.contains(PLOTLY_SRI_HASH),
             "rendered html missing pinned Plotly SRI hash"
+        );
+    }
+
+    /// `build_context` must derive sorted, de-duplicated arrays for
+    /// scenarios / envs / allocators. Three synthetic runs with a known
+    /// label cross-product land in the JSON in alphabetical order
+    /// (D-09 byte-identical output).
+    #[test]
+    fn context_extracts_scenarios_envs_allocators() {
+        let runs = vec![
+            make_test_run(
+                "ptmalloc",
+                Some("alloc-bench:ptmalloc-debian-slim"),
+                "multithread",
+                50_000,
+            ),
+            make_test_run(
+                "jemalloc",
+                Some("alloc-bench:jemalloc-alpine"),
+                "multithread",
+                50_000,
+            ),
+            make_test_run(
+                "mimalloc",
+                Some("alloc-bench:mimalloc-distroless-cc"),
+                "cpu-bound",
+                50_000,
+            ),
+        ];
+        let ctx = build_context(&runs).expect("build_context");
+        assert_eq!(ctx.scenarios, r#"["cpu-bound","multithread"]"#);
+        assert_eq!(
+            ctx.envs,
+            r#"["alloc-bench:jemalloc-alpine","alloc-bench:mimalloc-distroless-cc","alloc-bench:ptmalloc-debian-slim"]"#
+        );
+        assert_eq!(ctx.allocators, r#"["jemalloc","mimalloc","ptmalloc"]"#);
+    }
+
+    /// `suspect_pairs_json` lists every `{allocator}·{env}` combo whose
+    /// run trips `is_suspect`. Two synthetic runs: one suspect (samples=5_000),
+    /// one clean (samples=50_000) — only the suspect pair appears.
+    #[test]
+    fn context_marks_suspect_pairs() {
+        let runs = vec![
+            // Suspect: samples_count < 10_000.
+            make_test_run(
+                "jemalloc",
+                Some("alloc-bench:jemalloc-alpine"),
+                "multithread",
+                5_000,
+            ),
+            // Clean.
+            make_test_run(
+                "ptmalloc",
+                Some("alloc-bench:ptmalloc-debian-slim"),
+                "multithread",
+                50_000,
+            ),
+        ];
+        let ctx = build_context(&runs).expect("build_context");
+        assert_eq!(
+            ctx.suspect_pairs,
+            r#"["jemalloc·alloc-bench:jemalloc-alpine"]"#
         );
     }
 }
