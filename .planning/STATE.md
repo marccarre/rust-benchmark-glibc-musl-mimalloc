@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-19T00:53:11.016Z"
+status: ready_to_plan
+stopped_at: Phase 4 complete (3/3) — ready to discuss Phase 5
+last_updated: 2026-05-19T04:03:19.975Z
 last_activity: 2026-05-19 -- Phase 4 planning complete
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 13
-  completed_plans: 9
+  completed_plans: 12
   percent: 40
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-17)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** Phase 3 — Docker Matrix & Local Orchestration
+**Current focus:** Phase 5 — ci, image size gate & public polish
 
 ## Current Position
 
-Phase: 3 (Docker Matrix & Local Orchestration) — EXECUTING
-Plan: 1 of 5
-Status: Ready to execute
-Last activity: 2026-05-19 -- Phase 4 planning complete
+Phase: 5
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-19
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -36,7 +36,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 8
 - Average duration: -
 - Total execution time: 0.0 hours
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 |-------|-------|-------|----------|
 | 01 | 2 | - | - |
 | 02 | 3 | - | - |
+| 4 | 3 | - | - |
 
 **Recent Trend:**
 

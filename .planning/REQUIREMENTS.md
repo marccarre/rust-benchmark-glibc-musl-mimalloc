@@ -54,20 +54,20 @@
 
 - [ ] **ORCH-01**: User runs `just bench-all` and the Justfile builds + runs the full (allocator × env) matrix, emitting one results.json per cell
 - [ ] **ORCH-02**: User runs `just bench-host` and the Justfile builds + runs the bench natively on the host (macOS libmalloc baseline)
-- [ ] **ORCH-03**: User runs `just aggregate` and the Justfile invokes `alloc-bench-aggregator` to produce `report/index.html` + `REPORT.md`
+- [x] **ORCH-03**: User runs `just aggregate` and the Justfile invokes `alloc-bench-aggregator` to produce `report/index.html` + `REPORT.md`
 - [ ] **ORCH-04**: User pushes to GitHub and a CI workflow runs the matrix (excluding macOS-specific cells) on `ubuntu-24.04`, uploading `results/` and `report/` as artifacts
 - [ ] **ORCH-05**: CI runs `dive --ci` for each image and fails the build if image-size thresholds are exceeded
 
 ### Aggregator & Reporting
 
-- [ ] **AGG-01**: User runs `alloc-bench-aggregator --input "results/*.json" --output report/` and a `report/index.html` is generated with Plotly.js charts (results inlined; opens via `file://`)
-- [ ] **AGG-02**: The HTML dashboard supports filtering by scenario, env, allocator (multi-select sidebar) and supports side-by-side comparison of two configs
-- [ ] **AGG-03**: The HTML dashboard renders: throughput bar chart (grouped by scenario, colored by allocator, faceted by env), latency-percentile heatmap, RSS-over-time lines, and a comparison-diff bar chart
-- [ ] **AGG-04**: User reads `REPORT.md` and finds a Markdown side-by-side comparison table of all 4 allocators across all scenarios with the winner highlighted per row
-- [ ] **AGG-05**: User reads `REPORT.md` and finds a Docker runtime comparison table (image size, build time, run-time overhead)
-- [ ] **AGG-06**: User reads `REPORT.md` and finds Mermaid.js architecture diagrams for ptmalloc, mallocng, jemalloc, and mimalloc explaining each allocator's structure
-- [ ] **AGG-07**: User reads `REPORT.md` and finds a "Recommendations" section mapping workload-shape → recommended allocator
-- [ ] **AGG-08**: User reads `README.md` and finds an overall Mermaid.js system diagram of how memory allocation works on modern Linux
+- [x] **AGG-01**: User runs `alloc-bench-aggregator --input "results/*.json" --output report/` and a `report/index.html` is generated with Plotly.js charts (results inlined; opens via `file://`)
+- [x] **AGG-02**: The HTML dashboard supports filtering by scenario, env, allocator (multi-select sidebar) and supports side-by-side comparison of two configs
+- [x] **AGG-03**: The HTML dashboard renders: throughput bar chart (grouped by scenario, colored by allocator, faceted by env), latency-percentile heatmap, RSS-over-time lines, and a comparison-diff bar chart
+- [x] **AGG-04**: User reads `REPORT.md` and finds a Markdown side-by-side comparison table of all 4 allocators across all scenarios with the winner highlighted per row
+- [x] **AGG-05**: User reads `REPORT.md` and finds a Docker runtime comparison table (image size, build time, run-time overhead)
+- [x] **AGG-06**: User reads `REPORT.md` and finds Mermaid.js architecture diagrams for ptmalloc, mallocng, jemalloc, and mimalloc explaining each allocator's structure
+- [x] **AGG-07**: User reads `REPORT.md` and finds a "Recommendations" section mapping workload-shape → recommended allocator
+- [x] **AGG-08**: User reads `README.md` and finds an overall Mermaid.js system diagram of how memory allocation works on modern Linux
 
 ### Reproducibility & Documentation
 
@@ -149,15 +149,15 @@ Coverage: 49/49 v1 requirements mapped to exactly one phase. No orphans.
 | DOCK-09 | Phase 3 | Pending |
 | ORCH-01 | Phase 3 | Pending |
 | ORCH-02 | Phase 3 | Pending |
-| ORCH-03 | Phase 4 | Pending |
-| AGG-01 | Phase 4 | Pending |
-| AGG-02 | Phase 4 | Pending |
-| AGG-03 | Phase 4 | Pending |
-| AGG-04 | Phase 4 | Pending |
-| AGG-05 | Phase 4 | Pending |
-| AGG-06 | Phase 4 | Pending |
-| AGG-07 | Phase 4 | Pending |
-| AGG-08 | Phase 4 | Pending |
+| ORCH-03 | Phase 4 | Complete |
+| AGG-01 | Phase 4 | Complete |
+| AGG-02 | Phase 4 | Complete |
+| AGG-03 | Phase 4 | Complete |
+| AGG-04 | Phase 4 | Complete |
+| AGG-05 | Phase 4 | Complete |
+| AGG-06 | Phase 4 | Complete |
+| AGG-07 | Phase 4 | Complete |
+| AGG-08 | Phase 4 | Complete |
 | ORCH-04 | Phase 5 | Pending |
 | ORCH-05 | Phase 5 | Pending |
 | REPR-01 | Phase 5 | Pending |
