@@ -633,7 +633,11 @@ function renderReportMirrorTable() \{
   while (root.firstChild) \{ root.removeChild(root.firstChild); }
 
   // Group RESULTS by scenario name; alphabetical iteration via sort().
-  const byScenario = \{};
+  // WR-03 (Phase-04 review): use `Object.create(null)` so a scenario
+  // name like `__proto__` / `constructor` / `hasOwnProperty` cannot
+  // pollute the prototype chain. Aligns the JS side with the Rust
+  // side's BTreeMap semantics (no inherited keys).
+  const byScenario = Object.create(null);
   for (const r of RESULTS) \{
     const key = r.scenario.name;
     if (!byScenario[key]) \{ byScenario[key] = []; }
