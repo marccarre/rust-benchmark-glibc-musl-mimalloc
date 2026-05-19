@@ -1,0 +1,8 @@
+{
+  "alloc": "jemalloc",
+  "env": "alpine",
+  "image_size_bytes": 27845632,
+  "image_size_mb": 26.55,
+  "build_time_s": 142.3,
+  "captured_at": "2026-05-19T15:30:42Z"
+}
