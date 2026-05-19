@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>alloc-bench report — {run_count} runs, {timestamp_iso8601}</title>
+<!-- plotly: 2.35.3 · {plotly_sri_hash} (computed 2026-05-19 against cdn.plot.ly) -->
+<script
+  src="{plotly_cdn_url}"
+  integrity="{plotly_sri_hash}"
+  crossorigin="anonymous"></script>
+<style>
+:root \{
+  /* Chrome (60/30/10) */
+  --color-dominant: #FFFFFF;
+  --color-secondary: #F4F5F7;
+  --color-border: #E1E4E8;
+  --color-text: #1F2328;
+  --color-text-muted: #656D76;
+  --color-accent: #0969DA;
+  --color-destructive: #CF222E;
+
+  /* Winner highlight (semantic, not in 60/30/10 budget) */
+  --color-winner-bg: #DAFBE1;
+  --color-winner-text: #1A7F37;
+
+  /* Allocator series (Viridis-derived) */
+  --color-series-ptmalloc: #440154;
+  --color-series-mallocng: #3B528B;
+  --color-series-jemalloc: #21908C;
+  --color-series-mimalloc: #5DC863;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Typography */
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-size-body: 14px;
+  --font-size-heading: 20px;
+  --font-size-display: 28px;
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+}
+body \{
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-dominant);
+}
+.page \{
+  max-width: 1440px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+}
+header \{
+  grid-column: 1 / -1;
+  padding: var(--space-xl) var(--space-lg) var(--space-md);
+}
+header h1 \{
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
+  margin: 0 0 var(--space-xs) 0;
+}
+header p \{
+  margin: 0;
+  color: var(--color-text-muted);
+}
+aside.sidebar \{
+  width: 220px;
+  background: var(--color-secondary);
+  padding: var(--space-lg);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+aside.sidebar section \{
+  margin-bottom: var(--space-md);
+}
+aside.sidebar strong \{
+  display: block;
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--space-xs);
+}
+aside.sidebar select \{
+  width: 100%;
+  padding: var(--space-sm);
+  font-family: var(--font-body);
+  font-size: var(--font-size-body);
+}
+aside.sidebar select:focus option:checked \{
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+aside.sidebar p.hint \{
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: var(--space-md) 0 0 0;
+}
+main.charts \{
+  padding: var(--space-lg);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-lg);
+}
+.chart-card \{
+  background: var(--color-dominant);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: var(--space-md);
+  min-height: 360px;
+}
+section.diff-picker \{
+  grid-column: 2 / -1;
+  padding: var(--space-md) var(--space-lg) var(--space-xl);
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: var(--space-md);
+  align-items: center;
+}
+section.diff-picker label \{
+  font-weight: var(--font-weight-semibold);
+}
+@media (max-width: 768px) \{
+  .page \{
+    grid-template-columns: 1fr;
+  }
+  aside.sidebar \{
+    position: relative;
+    height: auto;
+    width: 100%;
+  }
+  main.charts \{
+    grid-template-columns: 1fr;
+  }
+}
+@media print \{
+  aside.sidebar \{
+    display: none;
+  }
+  main.charts \{
+    grid-template-columns: 1fr 1fr;
+  }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>alloc-bench report</h1>
+    <p>{run_count} runs across {cell_count} cells · generated {timestamp_iso8601}</p>
+  </header>
+  <aside class="sidebar">
+    <section>
+      <strong>Scenarios</strong>
+      <select id="sel-scenarios" multiple size="6"></select>
+    </section>
+    <section>
+      <strong>Environments</strong>
+      <select id="sel-envs" multiple size="6"></select>
+    </section>
+    <section>
+      <strong>Allocators</strong>
+      <select id="sel-allocs" multiple size="6"></select>
+    </section>
+    <p class="hint">Hold Cmd or Ctrl to multi-select. Charts update live.</p>
+  </aside>
+  <main class="charts">
+    <div id="chart-throughput" class="chart-card"></div>
+    <div id="chart-latency" class="chart-card"></div>
+    <div id="chart-rss" class="chart-card"></div>
+    <div id="chart-diff" class="chart-card"></div>
+  </main>
+  <section class="diff-picker">
+    <label>Config A</label>
+    <select id="ab-a-alloc"></select>
+    <select id="ab-a-env"></select>
+    <label>Config B</label>
+    <select id="ab-b-alloc"></select>
+    <select id="ab-b-env"></select>
+  </section>
+</div>
+<script>
+// Inlined results — `unescaped` formatter prevents tinytemplate from
+// HTML-escaping `<`/`>`/`&`/`"` inside the JSON.
+const RESULTS = { results_json | unescaped };
+
+// Plan 01 ships the skeleton; Plan 02 wires the actual `Plotly.react`
+// calls against RESULTS and the filter sidebar.
+function onFilterChange() \{
+  /* Plan 02 wires Plotly.react against RESULTS */
+}
+document.querySelectorAll("select[multiple]").forEach(el => \{
+  el.addEventListener("change", onFilterChange);
+});
+onFilterChange();
+</script>
+</body>
+</html>
