@@ -1089,7 +1089,7 @@ This is what every cell uploads alongside its results. The aggregator merges it 
 - A2 should be live-checked once Docker is available on a runner; the "Capture image metadata" step is a 5-second test.
 - A5 should be acknowledged by the user; if they prefer population stddev (NumPy default), the threshold semantics change and Pattern 5 needs an `n / (n - 1)` adjustment.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should the aggregate job run unconditionally, or only when bench-matrix succeeds?**
    - What we know: CONTEXT.md D-05 says "final aggregate job declares `needs: [bench-matrix]`". Standard semantics: aggregate runs only if all matrix jobs succeed.

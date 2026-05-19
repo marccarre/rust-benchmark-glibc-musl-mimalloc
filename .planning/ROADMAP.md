@@ -123,7 +123,22 @@ Plans:
   3. The aggregator output (driven by CI) reports median + min/max range per matrix cell across the ≥ 3 runs, and any cell with a CV > X% is highlighted as "high variance" in REPORT.md.
   4. A reader who has never seen the repo follows the README "Run it yourself" walkthrough — Docker prerequisites, `just bench-all`, then opening `report/index.html` — and reproduces a representative subset of results without needing any out-of-band knowledge.
 
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — Multi-run statistics module + fixtures (REPR-03 math layer)
+- [ ] 05-02-PLAN.md — GHA workflow + LICENSE files + ci-bench-cell + ci-validate (ORCH-04, ORCH-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-03-PLAN.md — Aggregator integration: multi-run REPORT.md decoration + sidecar image_size_mb backfill (REPR-03 rendering layer + Phase 4 D-10 closure)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 05-04-PLAN.md — README walkthrough + LICENSE citation + STATE/ROADMAP/CLAUDE closure (REPR-01)
 
 ## Progress
 
