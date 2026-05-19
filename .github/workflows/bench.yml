@@ -1,0 +1,265 @@
+# .github/workflows/bench.yml
+#
+# Phase 5 — CI matrix for the alloc-bench cross-libc / cross-allocator
+# benchmark suite. Three sequential job tiers:
+#
+#   1. pre-bench        — fmt + clippy + dce-check (single shot, ~5 min)
+#   2. bench-matrix     — 18 cells in parallel (D-02), each:
+#                            build → dive-check → 3 seeded runs → upload
+#                         dive --ci is the ORCH-05 image-size gate.
+#   3. aggregate        — needs: bench-matrix, if: always() so a partial
+#                         report still emits when one cell fails (D-05 +
+#                         RESEARCH §Open Questions ¶1). Runs Plan 03's
+#                         `just ci-aggregate` to merge results + meta.json
+#                         sidecars and upload `bench-report-${{ run_id }}`.
+#
+# Locked decisions consumed:
+#   D-01: triggers (push any branch + PR → main + workflow_dispatch).
+#   D-02: 18-cell matrix on ubuntu-24.04, fail-fast: false.
+#   D-03: scenarios run sequentially within a cell (just ci-bench-cell
+#         → run-all-smoke).
+#   D-04: 3 runs per cell with seeds 1/2/3.
+#   D-05: per-cell upload via actions/upload-artifact@v4 (unique name);
+#         aggregate uses pattern + merge-multiple.
+#   D-06: concurrency group cancels in-progress on non-default branches;
+#         main is never cancelled.
+#   D-07: Swatinem/rust-cache@v2 + actions/cache@v4 for cargo registry +
+#         BuildKit type=gha,mode=max,scope per cell.
+#   D-08, D-09: dive --ci enforcement via `just dive-check`.
+#   D-13: meta.json sidecar (image_size_bytes/_mb) captured per cell.
+#   D-19: 60-min p95 wall-clock at bench-all-smoke recipe rates.
+#   D-20: schema_version: 1 (untouched — sidecar decorates only).
+#
+# RESEARCH cross-references:
+#   §Pattern 1 — 18-cell explicit `include:` block.
+#   §Pattern 2 — per-cell artifact + glob download.
+#   §Pattern 3 — BuildKit cache scoped per cell.
+#   §Pattern 4 — meta.json sidecar shape (lives in `just ci-bench-cell`).
+#   §Pattern 6 — concurrency boolean expression on cancel-in-progress.
+#   §Pitfall 3 — explicit timeout-minutes guards (15 / 30 / 15).
+#   §Pitfall 5 — rustc pin is 1.91 (NOT 1.83); matches rust-toolchain.toml,
+#                all six docker/*.Dockerfile, and justfile:79.
+#
+# A CI status badge for this workflow will be added to README.md by Plan
+# 05-04 — the literal URL is:
+#   https://github.com/marccarre/rust-benchmark-glibc-musl-mimalloc/actions/workflows/bench.yml/badge.svg
+
+name: bench
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# D-06 + RESEARCH §Pattern 6: cancel queued runs on non-default branches;
+# main runs to completion (publishing the artifact / report on every push).
+concurrency:
+  group: bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# RESEARCH §Open Questions ¶2: belt-and-suspenders. actions/upload-artifact@v4
+# uses the implicit GITHUB_TOKEN; declaring the minimum permissions explicitly
+# documents intent + survives org-level default-token-policy hardening.
+permissions:
+  contents: read
+  actions: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Phase 3 D-09 locked: x86-64-v3 baseline so GHA shared-CPU pool migrations
+  # never produce illegal-instruction crashes. The host-cpu auto-detect path
+  # is forbidden — runners migrate between CPU types stochastically.
+  RUSTFLAGS: "-C target-cpu=x86-64-v3"
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────
+  # 1) pre-bench — single-shot fmt + clippy + dce-check before the matrix.
+  # ────────────────────────────────────────────────────────────────────
+  pre-bench:
+    name: Pre-bench (fmt + clippy + dce-check)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: pre-bench
+
+      - uses: extractions/setup-just@v2
+
+      - name: Validate (fmt + clippy + dce-check)
+        run: just ci-validate
+
+  # ────────────────────────────────────────────────────────────────────
+  # 2) bench-matrix — 18 parallel cells (D-02). Build → dive → 3 seeds → upload.
+  # ────────────────────────────────────────────────────────────────────
+  bench-matrix:
+    name: Bench ${{ matrix.alloc }}-${{ matrix.env }}
+    needs: pre-bench
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30  # RESEARCH §Pitfall 3 — kill wedged cells fast.
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18 cells — order mirrors `_matrix_cells` in justfile:131-150
+        # (glibc family first, then musl family, for BuildKit cache locality).
+        # Cross-libc combos (mallocng-on-glibc, ptmalloc-on-musl) are
+        # STRUCTURALLY ABSENT — D-04 hard-skip is encoded by omission.
+        include:
+          # glibc family (9 cells)
+          - { env: debian-slim,        alloc: ptmalloc, libc: glibc, target: x86_64-unknown-linux-gnu  }
+          - { env: debian-slim,        alloc: jemalloc, libc: glibc, target: x86_64-unknown-linux-gnu  }
+          - { env: debian-slim,        alloc: mimalloc, libc: glibc, target: x86_64-unknown-linux-gnu  }
+          - { env: distroless-cc,      alloc: ptmalloc, libc: glibc, target: x86_64-unknown-linux-gnu  }
+          - { env: distroless-cc,      alloc: jemalloc, libc: glibc, target: x86_64-unknown-linux-gnu  }
+          - { env: distroless-cc,      alloc: mimalloc, libc: glibc, target: x86_64-unknown-linux-gnu  }
+          - { env: wolfi,              alloc: ptmalloc, libc: glibc, target: x86_64-unknown-linux-gnu  }
+          - { env: wolfi,              alloc: jemalloc, libc: glibc, target: x86_64-unknown-linux-gnu  }
+          - { env: wolfi,              alloc: mimalloc, libc: glibc, target: x86_64-unknown-linux-gnu  }
+          # musl family (9 cells)
+          - { env: alpine,             alloc: mallocng, libc: musl,  target: x86_64-unknown-linux-musl }
+          - { env: alpine,             alloc: jemalloc, libc: musl,  target: x86_64-unknown-linux-musl }
+          - { env: alpine,             alloc: mimalloc, libc: musl,  target: x86_64-unknown-linux-musl }
+          - { env: distroless-static,  alloc: mallocng, libc: musl,  target: x86_64-unknown-linux-musl }
+          - { env: distroless-static,  alloc: jemalloc, libc: musl,  target: x86_64-unknown-linux-musl }
+          - { env: distroless-static,  alloc: mimalloc, libc: musl,  target: x86_64-unknown-linux-musl }
+          - { env: scratch,            alloc: mallocng, libc: musl,  target: x86_64-unknown-linux-musl }
+          - { env: scratch,            alloc: jemalloc, libc: musl,  target: x86_64-unknown-linux-musl }
+          - { env: scratch,            alloc: mimalloc, libc: musl,  target: x86_64-unknown-linux-musl }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: extractions/setup-just@v2
+
+      # RESEARCH §Pitfall 6: per-cell shared-key shields each cell from
+      # whole-repo cache loss when an unrelated dev-dep bumps Cargo.lock.
+      - name: Cache cargo registry + target (Swatinem)
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: bench-${{ matrix.alloc }}-${{ matrix.env }}
+          # save-if main-only keeps the cache budget healthy on PRs.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Belt-and-suspenders: an actions/cache@v4 layer keyed on Cargo.lock
+      # for the cargo-registry + git index. Swatinem auto-cleans incremental
+      # files; this layer covers the registry index alone (cheap to refill,
+      # but the explicit fallback survives a Swatinem cache miss).
+      - name: Cache cargo registry index (actions/cache)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: cargo-${{ matrix.alloc }}-${{ matrix.env }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.alloc }}-${{ matrix.env }}-
+
+      # RESEARCH §Pattern 3: BuildKit cache scoped per cell so 18 parallel
+      # builds don't overwrite each other's `buildkit` cache key.
+      - name: Build image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/${{ matrix.env }}.Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: alloc-bench:${{ matrix.alloc }}-${{ matrix.env }}
+          build-args: |
+            ALLOC=${{ matrix.alloc }}
+            TARGET=${{ matrix.target }}
+            RUST_VERSION=1.91
+            OCI_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.alloc }}-${{ matrix.env }}
+          cache-to:   type=gha,mode=max,scope=${{ matrix.alloc }}-${{ matrix.env }}
+
+      # ORCH-05 enforcement: dive --ci exits non-zero on threshold breach
+      # (.dive-ci: lowestEfficiency 0.95, highestUserWastedPercent 0.05,
+      # highestWastedBytes 50MB). Fails the cell job before the bench runs.
+      - name: Dive image-size gate
+        run: just dive-check ${{ matrix.env }} ${{ matrix.alloc }}
+
+      # ci-bench-cell owns the docker invocation, the meta.json sidecar
+      # capture (D-13 / RESEARCH §Pattern 4), and the 3-seed loop
+      # (--cpus=4 --memory=4g --cpuset-cpus=0-3). Local-machine reproduction:
+      # a developer running `just ci-bench-cell debian-slim ptmalloc` gets
+      # byte-identical outputs to a CI run.
+      - name: Run bench (3 seeds + meta capture)
+        run: just ci-bench-cell ${{ matrix.env }} ${{ matrix.alloc }}
+
+      # RESEARCH §Pattern 2: unique artifact name per cell. v4 is required
+      # for the matrix unique-name-per-job model. `if-no-files-found: error`
+      # surfaces missing output (e.g. a wedged docker run) as a hard fail.
+      - name: Upload per-cell artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.alloc }}-${{ matrix.env }}
+          path: |
+            results/${{ matrix.alloc }}-${{ matrix.env }}-seed*.json
+            meta/${{ matrix.alloc }}-${{ matrix.env }}.json
+          if-no-files-found: error
+          retention-days: 90
+
+  # ────────────────────────────────────────────────────────────────────
+  # 3) aggregate — fan-in. Plan 03 implements `just ci-aggregate`.
+  # ────────────────────────────────────────────────────────────────────
+  aggregate:
+    name: Aggregate report
+    needs: bench-matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # RESEARCH §Open Questions ¶1: a 17-cell partial report is more useful
+    # than no report at all. The aggregator already handles partial inputs
+    # (Phase 4 D-08).
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.91.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: aggregate
+
+      - uses: extractions/setup-just@v2
+
+      # RESEARCH §Pattern 2: glob + merge-multiple flattens the per-cell
+      # artifacts into one ./artifacts directory.
+      - name: Download all per-cell artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          pattern: results-*
+          merge-multiple: true
+
+      - name: Reorganize artifacts (results/ + meta/)
+        run: |
+          mkdir -p results meta
+          mv artifacts/*-seed*.json results/ 2>/dev/null || true
+          mv artifacts/*.json        meta/    2>/dev/null || true
+          ls -la results/ meta/ || true
+
+      # Plan 03 implements the body of `ci-aggregate`. Until then this step
+      # exits 1 with the documented stub message — surfaces the hand-off
+      # point loudly in the GHA UI.
+      - name: Run aggregator
+        run: just ci-aggregate
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report-${{ github.run_id }}
+          path: report/
+          if-no-files-found: warn
+          retention-days: 90
