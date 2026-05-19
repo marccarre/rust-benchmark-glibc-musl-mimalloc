@@ -190,6 +190,7 @@ section.diff-picker label \{
     <label>Config B</label>
     <select id="ab-b-alloc"></select>
     <select id="ab-b-env"></select>
+    <div id="diff-banner" style="grid-column: 1 / -1; display:none; color: var(--color-destructive); margin-top: var(--space-sm);"></div>
   </section>
 </div>
 <script>
@@ -274,13 +275,305 @@ function bootstrap() \{
   }
 }
 
-// Plan 01 stub — Plan 02 Task 2 replaces it with the real chart wiring.
-function onFilterChange() \{
-  /* Plan 02 wires Plotly.react against RESULTS */
+// --- Plan 02 Task 2: chart trace builders + filter handler + A/B diff -----
+
+// Viridis allocator color map (UI-SPEC line 92). Colorblind-safe;
+// deterministic legend ordering across runs.
+const ALLOC_COLORS = \{
+  ptmalloc: '#440154',
+  mallocng: '#3B528B',
+  jemalloc: '#21908C',
+  mimalloc: '#5DC863',
+};
+
+// UI-SPEC line 291: hide the modebar by default; reveal on hover; drop
+// Plotly's logo and the cloud-export button (privacy + screenshot tidiness).
+const PLOTLY_CONFIG = \{
+  displayModeBar: 'hover',
+  displaylogo: false,
+  modeBarButtonsToRemove: ['sendDataToCloud'],
+};
+
+// UI-SPEC line 291 / Print and Screenshot Friendliness: override Plotly's
+// Open Sans default with the system stack — no webfont fetch, identical
+// pixels across reviewer machines.
+const SHARED_FONT = \{
+  family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+};
+
+// --- helpers ---
+
+function readSelections() \{
+  return \{
+    scenarios: Array.from(document.querySelector('#sel-scenarios').selectedOptions).map(o => o.value),
+    envs:      Array.from(document.querySelector('#sel-envs').selectedOptions).map(o => o.value),
+    allocs:    Array.from(document.querySelector('#sel-allocs').selectedOptions).map(o => o.value),
+  };
 }
-document.querySelectorAll("select[multiple]").forEach(el => \{
-  el.addEventListener("change", onFilterChange);
+
+function applyFilters(runs, sel) \{
+  return runs.filter(r =>
+    sel.scenarios.includes(r.scenario.name) &&
+    sel.envs.includes(envLabel(r)) &&
+    sel.allocs.includes(r.build.allocator)
+  );
+}
+
+function isEmptySelection(sel) \{
+  return sel.scenarios.length === 0 || sel.envs.length === 0 || sel.allocs.length === 0;
+}
+
+function setEmptyState(divIds) \{
+  for (const id of divIds) \{
+    const card = document.querySelector('#' + id);
+    if (card) \{
+      card.innerHTML = '<h3>No data in current filter</h3><p>Select at least one scenario, environment, and allocator to render charts.</p>';
+    }
+  }
+}
+
+function legendName(run) \{
+  const env = envLabel(run);
+  const prefix = SUSPECT_PAIRS.has(suspectKey(run.build.allocator, env)) ? '⚠ ' : '';
+  return prefix + run.build.allocator + '·' + env;
+}
+
+// Sorted, de-duplicated string list for chart axes/series.
+function uniqSorted(items) \{
+  return Array.from(new Set(items)).sort();
+}
+
+// --- Chart 1: throughput grouped bar ---
+//
+// SCOPE NOTE: D-04 calls for "faceted by env" but UI-SPEC §Layout shows
+// ONE bar chart cell, not a multi-panel facet. Plan 02 ships a single
+// grouped bar (one bar per allocator across all envs in scope, scenario
+// on X). True env-faceting via Plotly subplots remains a v2 stretch;
+// RESEARCH §Code Examples §3 covers the pattern when needed.
+function makeThroughputTraces(filtered) \{
+  const allocs = uniqSorted(filtered.map(r => r.build.allocator));
+  const scenarios = uniqSorted(filtered.map(r => r.scenario.name));
+  const traces = [];
+  for (const alloc of allocs) \{
+    const allocRuns = filtered.filter(r => r.build.allocator === alloc);
+    let anySuspect = false;
+    for (const r of allocRuns) \{
+      if (isSuspect(r)) \{ anySuspect = true; break; }
+    }
+    const y = scenarios.map(s => \{
+      const hit = allocRuns.find(r => r.scenario.name === s);
+      return hit ? hit.metrics.ticks_per_s : null;
+    });
+    traces.push(\{
+      type: 'bar',
+      name: alloc + (anySuspect ? ' ⚠' : ''),
+      x: scenarios,
+      y: y,
+      marker: \{ color: ALLOC_COLORS[alloc] || '#888' },
+    });
+  }
+  return traces;
+}
+
+const throughputLayout = \{
+  barmode: 'group',
+  font: SHARED_FONT,
+  yaxis: \{ title: \{ text: 'throughput (per scenario unit, see scenario.unit)' } },
+  xaxis: \{ title: \{ text: 'scenario' } },
+  margin: \{ t: 40, r: 16, b: 48, l: 64 },
+  title: \{ text: 'Throughput by scenario' },
+};
+
+// --- Chart 2: latency-percentile heatmap ---
+function makeLatencyHeatmap(filtered) \{
+  const sorted = filtered.slice().sort((a, b) => \{
+    const ka = a.build.allocator + '|' + envLabel(a) + '|' + a.scenario.name;
+    const kb = b.build.allocator + '|' + envLabel(b) + '|' + b.scenario.name;
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+  const y = sorted.map(r => legendName(r) + '·' + r.scenario.name);
+  const x = ['p50', 'p95', 'p99', 'p999', 'max'];
+  const z = sorted.map(r => [
+    r.metrics.tick_latency_ns.p50,
+    r.metrics.tick_latency_ns.p95,
+    r.metrics.tick_latency_ns.p99,
+    r.metrics.tick_latency_ns.p999,
+    r.metrics.tick_latency_ns.max,
+  ]);
+  return [\{
+    type: 'heatmap',
+    z: z,
+    x: x,
+    y: y,
+    colorscale: 'Viridis',
+    reversescale: false,
+    colorbar: \{ title: \{ text: 'latency (ns)' } },
+  }];
+}
+
+const latencyLayout = \{
+  font: SHARED_FONT,
+  margin: \{ t: 40, r: 16, b: 32, l: 220 },
+  title: \{ text: 'Latency percentiles (heatmap)' },
+};
+
+// --- Chart 3: RSS over time ---
+function makeRssLines(filtered) \{
+  const sorted = filtered.slice().sort((a, b) => \{
+    const ka = a.build.allocator + '|' + envLabel(a) + '|' + a.scenario.name;
+    const kb = b.build.allocator + '|' + envLabel(b) + '|' + b.scenario.name;
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+  const traces = [];
+  for (const r of sorted) \{
+    const samples = r.metrics.rss_growth_samples || [];
+    if (samples.length === 0) \{ continue; }
+    traces.push(\{
+      type: 'scatter',
+      mode: 'lines',
+      name: legendName(r) + '·' + r.scenario.name,
+      x: samples.map(s => s.t_s),
+      y: samples.map(s => s.rss_kb),
+      line: \{ color: ALLOC_COLORS[r.build.allocator] || '#888' },
+    });
+  }
+  return traces;
+}
+
+const rssLayout = \{
+  font: SHARED_FONT,
+  yaxis: \{ title: \{ text: 'RSS (kB)' } },
+  xaxis: \{ title: \{ text: 'elapsed (s)' } },
+  margin: \{ t: 40, r: 16, b: 48, l: 80 },
+  title: \{ text: 'RSS over time' },
+};
+
+// --- Chart 4: A/B comparison-diff ---
+
+function readAbSelections() \{
+  return \{
+    a: \{
+      alloc: document.querySelector('#ab-a-alloc').value,
+      env:   document.querySelector('#ab-a-env').value,
+    },
+    b: \{
+      alloc: document.querySelector('#ab-b-alloc').value,
+      env:   document.querySelector('#ab-b-env').value,
+    },
+  };
+}
+
+// Find the first run matching alloc+env. When multiple scenarios are
+// present, prefer the Phase-1 anchor scenario `multithread` (D-04).
+function findCellRun(filtered, alloc, env) \{
+  const matches = filtered.filter(r => r.build.allocator === alloc && envLabel(r) === env);
+  if (matches.length === 0) \{ return null; }
+  const mt = matches.find(r => r.scenario.name === 'multithread');
+  return mt || matches[0];
+}
+
+function pctDelta(a, b) \{
+  if (a === 0) \{ return 0; }
+  return ((b - a) / a) * 100;
+}
+
+function makeDiffBars(filtered) \{
+  const ab = readAbSelections();
+  const aRun = findCellRun(filtered, ab.a.alloc, ab.a.env);
+  const bRun = findCellRun(filtered, ab.b.alloc, ab.b.env);
+  const labels = ['throughput', 'p99 latency', 'peak RSS'];
+  if (!aRun || !bRun) \{
+    return [\{
+      type: 'bar',
+      x: labels,
+      y: [0, 0, 0],
+      marker: \{ color: '#888' },
+    }];
+  }
+  const ys = [
+    pctDelta(aRun.metrics.ticks_per_s, bRun.metrics.ticks_per_s),
+    pctDelta(aRun.metrics.tick_latency_ns.p99, bRun.metrics.tick_latency_ns.p99),
+    pctDelta(aRun.metrics.peak_rss_kb, bRun.metrics.peak_rss_kb),
+  ];
+  return [\{
+    type: 'bar',
+    x: labels,
+    y: ys,
+    marker: \{ color: ys.map(v => v >= 0 ? '#1A7F37' : '#CF222E') },
+    text: ys.map(v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%'),
+    textposition: 'outside',
+  }];
+}
+
+const diffLayout = \{
+  font: SHARED_FONT,
+  yaxis: \{ title: \{ text: '% delta (B vs A)' } },
+  margin: \{ t: 40, r: 16, b: 48, l: 80 },
+  title: \{ text: 'A/B comparison' },
+  shapes: [\{
+    type: 'line',
+    x0: -0.5,
+    x1: 2.5,
+    y0: 0,
+    y1: 0,
+    line: \{ color: '#888', width: 1, dash: 'dot' },
+  }],
+};
+
+function maybeDiffBanner(filtered) \{
+  const banner = document.querySelector('#diff-banner');
+  if (!banner) \{ return; }
+  const ab = readAbSelections();
+  let msg = '';
+  if (ab.a.alloc === ab.b.alloc && ab.a.env === ab.b.env) \{
+    msg = 'Config A and Config B are identical — pick differing values to see a delta.';
+  } else \{
+    const aRun = findCellRun(filtered, ab.a.alloc, ab.a.env);
+    const bRun = findCellRun(filtered, ab.b.alloc, ab.b.env);
+    const aSus = aRun && isSuspect(aRun);
+    const bSus = bRun && isSuspect(bRun);
+    if (aSus || bSus) \{
+      msg = '⚠ One or both selected configs are flagged suspect.';
+    }
+  }
+  banner.textContent = msg;
+  banner.style.display = msg ? 'block' : 'none';
+}
+
+// --- main handlers ---
+
+function onFilterChange() \{
+  const sel = readSelections();
+  if (isEmptySelection(sel)) \{
+    setEmptyState(['chart-throughput', 'chart-latency', 'chart-rss', 'chart-diff']);
+    maybeDiffBanner([]);
+    return;
+  }
+  const filtered = applyFilters(RESULTS, sel);
+  // RESEARCH §Anti-Patterns: always use Plotly.react for re-renders — it
+  // diffs and updates in place; the alternative API re-mounts and flickers.
+  Plotly.react('chart-throughput', makeThroughputTraces(filtered), throughputLayout, PLOTLY_CONFIG);
+  Plotly.react('chart-latency',    makeLatencyHeatmap(filtered),  latencyLayout,    PLOTLY_CONFIG);
+  Plotly.react('chart-rss',        makeRssLines(filtered),        rssLayout,        PLOTLY_CONFIG);
+  Plotly.react('chart-diff',       makeDiffBars(filtered),        diffLayout,       PLOTLY_CONFIG);
+  maybeDiffBanner(filtered);
+}
+
+// A/B picker change: the diff chart depends on A/B selections, but
+// recomputing all four charts is cheap and keeps the handler set small.
+function onAbChange() \{
+  onFilterChange();
+}
+
+// --- wire up listeners ---
+
+document.querySelectorAll('select[multiple]').forEach(el => \{
+  el.addEventListener('change', onFilterChange);
 });
+['ab-a-alloc', 'ab-a-env', 'ab-b-alloc', 'ab-b-env'].forEach(id => \{
+  document.querySelector('#' + id).addEventListener('change', onAbChange);
+});
+
 bootstrap();
 onFilterChange();
 </script>
