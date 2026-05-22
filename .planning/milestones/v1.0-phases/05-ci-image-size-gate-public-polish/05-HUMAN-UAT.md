@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 05-ci-image-size-gate-public-polish
 source: [05-VERIFICATION.md]
 started: 2026-05-19T07:50:00Z
@@ -39,16 +39,42 @@ blocked: 0
 
 - truth: "User runs `just bench-all-smoke` on the local machine (Apple Silicon) and gets 18 successful cells producing results/{alloc}-{env}.json files (REPR-01)."
   status: failed
-  reason: "User reported: All 18 cells failed `just run {env} {alloc}` with exit code 139 (SIGSEGV) on Apple Silicon (orbstack docker driver). Every alloc family + every env affected. Likely root cause: Phase 3 D-09 build flag `RUSTFLAGS=-C target-cpu=x86-64-v3` produces AVX2/BMI2 instructions that Rosetta on Apple Silicon does not fully emulate — the binary crashes on first instruction. The Troubleshooting block in README mentions `--platform linux/amd64` but the deeper issue (target-cpu=x86-64-v3 vs Rosetta) is not documented. GHA CI on real x86-64 Linux PASSED all 18 cells, confirming the issue is Rosetta-specific. Fix candidates: (a) document the Apple-Silicon workaround in README Troubleshooting (`RUSTFLAGS=-C target-cpu=x86-64-v2` or downgrade to baseline `x86-64`), or (b) detect Apple Silicon in `just build` and emit the build-flag override automatically, or (c) provide a separate `just bench-all-smoke-apple-silicon` recipe."
+  reason: "User reported: All 18 cells failed `just run {env} {alloc}` with exit code 139 (SIGSEGV) on Apple Silicon (orbstack docker driver). Every alloc family + every env affected. GHA CI on real x86-64 Linux PASSED all 18 cells, confirming the issue is Rosetta-specific."
   severity: blocker
   test: 1
-  artifacts: []
-  missing: []
+  root_cause: "Phase 3 D-09 build flag `RUSTFLAGS=-C target-cpu=x86-64-v3` (set in all 6 Dockerfile builder stages + workflow env) emits AVX2/BMI1/BMI2/FMA/F16C/MOVBE/OSXSAVE instructions. Rosetta-2 emulates only v1 baseline + SSE4.2 + AVX1, NOT AVX2/BMI2 — so the v3-tuned binary traps with SIGSEGV before reaching main(). Universal launch-time crash signature confirms host-CPU/emulator instruction-set gap, not allocator/libc bug."
+  artifacts:
+    - path: "docker/alpine.Dockerfile"
+      issue: "ENV RUSTFLAGS=-C target-cpu=x86-64-v3 at line 31"
+    - path: "docker/scratch.Dockerfile"
+      issue: "Same flag at line 41 plus +crt-static"
+    - path: "docker/debian-slim.Dockerfile"
+      issue: "Same flag at line 27"
+    - path: "docker/distroless-cc.Dockerfile"
+      issue: "Same flag at line 26"
+    - path: "docker/distroless-static.Dockerfile"
+      issue: "Same flag at line 30 plus +crt-static"
+    - path: "docker/wolfi.Dockerfile"
+      issue: "Same flag at line 32"
+    - path: "justfile"
+      issue: "Lines 43, 94, 109, 209: no Apple-Silicon override path"
+    - path: "README.md"
+      issue: "Lines 53-60 (Troubleshooting): missing Rosetta+v3 caveat. Line 93 (Reproducibility): missing user-facing knob doc"
+  missing:
+    - "[REQUIRED] README §Troubleshooting Apple-Silicon sub-bullet documenting Rosetta does not reliably execute AVX2/BMI2; v3-tuned bench binaries SIGSEGV on Apple Silicon. Override: `BENCH_TARGET_CPU=x86-64-v2 just bench-all-smoke`"
+    - "[REQUIRED] `just build` recipe auto-detects Apple Silicon via `uname -m == arm64 && uname -s == Darwin` and emits `--build-arg RUSTFLAGS_OVERRIDE=\"-C target-cpu=x86-64-v2\"`. All 6 Dockerfiles add `ARG RUSTFLAGS_OVERRIDE=\"\"` and `ENV RUSTFLAGS=\"${RUSTFLAGS_OVERRIDE:--C target-cpu=x86-64-v3}\"`"
+    - "[NICE-TO-HAVE] `just bench-all-smoke-apple-silicon` convenience recipe (sets BENCH_TARGET_CPU=x86-64-v2 and re-invokes bench-all-smoke)"
+  debug_session: ".planning/debug/apple-silicon-segfault.md"
 
 - truth: "GHA aggregate job downloads per-cell artifacts and `just ci-aggregate` produces report/index.html + report/REPORT.md; the bench-report-{run_id} artifact uploads successfully (ORCH-04)."
   status: failed
-  reason: "All 18 bench-matrix cells PASSED on ubuntu-24.04, but the Aggregate report job fails at Run aggregator with `Error: no results found matching pattern \"results/*.json\"` (workflow exit 1, line 375 of justfile). Root cause: `actions/upload-artifact@v4` preserves the `path:` directory structure when packaging artifacts; per-cell artifacts contain `results/{alloc}-{env}-seed*.json` and `meta/{alloc}-{env}.json` as subdirectories. `download-artifact@v4` with `merge-multiple: true` merges all artifacts into `./artifacts/` PRESERVING those subdirectory paths — so the merged tree is `./artifacts/results/{alloc}-{env}-seed*.json` and `./artifacts/meta/{alloc}-{env}.json`. The bench.yml `Reorganize artifacts` step's `mv` patterns (`mv artifacts/*-seed*.json results/` and `mv artifacts/*.json meta/`) target files at the TOP level of `./artifacts/`, where there are NO matching files. The `2>/dev/null || true` swallows the no-match silently, leaving `results/` empty. Fix: change the mv patterns to source from the actual subdirs — e.g. `mv artifacts/results/*.json results/` and `mv artifacts/meta/*.json meta/`. Note this was foreshadowed in the deferred IN-03 code-review finding (`mv artifacts/*.json meta/` is too permissive)."
+  reason: "All 18 bench-matrix cells PASSED on ubuntu-24.04, but the Aggregate report job fails at `Run aggregator` with `Error: no results found matching pattern \"results/*.json\"` (workflow exit 1, line 375 of justfile)."
   severity: blocker
   test: 2
-  artifacts: []
-  missing: []
+  root_cause: "actions/upload-artifact@v4 preserves the path: directory structure. Per-cell artifacts contain `results/{alloc}-{env}-seed*.json` and `meta/{alloc}-{env}.json` as subdirectories. download-artifact@v4 + merge-multiple:true PRESERVES that subdir tree in `./artifacts/`. The `Reorganize artifacts` step's mv patterns (`mv artifacts/*-seed*.json results/` + `mv artifacts/*.json meta/`) target the TOP level of `./artifacts/` where NO files exist; both mv invocations silently no-op via `2>/dev/null || true`, leaving `results/` empty. The aggregator's glob match returns zero, bail! fires the verbatim error string."
+  artifacts:
+    - path: ".github/workflows/bench.yml"
+      issue: "Lines 241-246: mv patterns source from wrong directory level; `2>/dev/null || true` hides the failure"
+  missing:
+    - "[REQUIRED] Replace bench.yml:241-246 Reorganize artifacts step: change mv patterns to source from `artifacts/results/*.json` and `artifacts/meta/*.json` (the actual subdir paths preserved by upload-artifact@v4). Drop `2>/dev/null || true` so genuine path drift surfaces as a hard fail. Add a leading `ls -la artifacts/` debug print so future GHA artifact-action behavior shifts are self-documenting."
+  debug_session: ".planning/debug/gha-aggregate-artifact-path.md"
