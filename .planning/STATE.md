@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: Awaiting next milestone
+milestone_name: MVP
+status: executing
 stopped_at: Phase 1 context gathered
-last_updated: "2026-05-19T11:31:44.631Z"
-last_activity: 2026-05-19 — Milestone v1.0 completed and archived
+last_updated: "2026-05-22T19:06:22.629Z"
+last_activity: 2026-05-22 -- Phase 05.1 execution started
 progress:
-  total_phases: 5
-  completed_phases: 4
-  total_plans: 17
-  completed_plans: 16
-  percent: 80
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 2
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-17)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** Milestone complete
+**Current focus:** Phase 05.1 — uat-gap-closure
 
 ## Current Position
 
-Phase: Milestone v1.0 complete
-Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-05-19 — Milestone v1.0 completed and archived
+Phase: 05.1 (uat-gap-closure) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 05.1
+Last activity: 2026-05-22 -- Phase 05.1 execution started
 
 ## Performance Metrics
 

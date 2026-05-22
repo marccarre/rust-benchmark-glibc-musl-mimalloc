@@ -26,11 +26,11 @@ See `.planning/milestones/v1.0-ROADMAP.md` for full phase details and `.planning
 
 **Requirements:** REPR-01, ORCH-04
 
-**Plans:** 2 plans (both Wave 1 — independent, zero file overlap, fully parallel)
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 05.1-01-PLAN.md — Apple Silicon Rosetta+v3 SIGSEGV fix (Dockerfiles + justfile + README)
-- [ ] 05.1-02-PLAN.md — GHA aggregate-step mv-source path fix (.github/workflows/bench.yml)
+- [x] 05.1-01-PLAN.md — Apple Silicon Rosetta+v3 SIGSEGV fix (Dockerfiles + justfile + README)
+- [x] 05.1-02-PLAN.md — GHA aggregate-step mv-source path fix (.github/workflows/bench.yml)
 
 ## Progress
 
@@ -41,4 +41,4 @@ Plans:
 | 3. Docker Matrix & Local Orchestration | v1.0 | 3/5 | Partial (deferred to Phase 5 CI) | 2026-05-19 |
 | 4. Aggregator & Dashboard | v1.0 | 3/3 | Complete | 2026-05-19 |
 | 5. CI, Image-Size Gate & Public Polish | v1.0 | 4/4 | Complete | 2026-05-19 |
-| 5.1. UAT Gap Closure | post-v1.0 | 0/2 | Active | — |
+| 5.1. UAT Gap Closure | post-v1.0 | 2/2 | Complete   | 2026-05-22 |
