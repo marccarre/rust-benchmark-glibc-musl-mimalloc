@@ -130,7 +130,7 @@ main.charts \{
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: var(--space-md);
-  min-height: 360px;
+  min-height: 480px;
 }
 section.diff-picker \{
   grid-column: 2 / -1;
@@ -361,7 +361,8 @@ const ALLOC_COLORS = \{
 const PLOTLY_CONFIG = \{
   displayModeBar: 'hover',
   displaylogo: false,
-  modeBarButtonsToRemove: ['sendDataToCloud'],
+  modeBarButtonsToRemove: ['sendDataToCloud', 'lasso2d', 'select2d'],
+  modeBarPosition: 'bottom',
 };
 
 // UI-SPEC line 291 / Print and Screenshot Friendliness: override Plotly's
@@ -496,7 +497,7 @@ const throughputLayout = \{
   font: SHARED_FONT,
   yaxis: \{ title: \{ text: 'throughput (per scenario unit, see scenario.unit)' } },
   xaxis: \{ title: \{ text: 'scenario' } },
-  margin: \{ t: 40, r: 16, b: 48, l: 64 },
+  margin: \{ t: 80, r: 16, b: 64, l: 80 },
   title: \{ text: 'Throughput by scenario' },
 };
 
@@ -529,7 +530,8 @@ function makeLatencyHeatmap(filtered) \{
 
 const latencyLayout = \{
   font: SHARED_FONT,
-  margin: \{ t: 40, r: 16, b: 32, l: 220 },
+  margin: \{ t: 80, r: 16, b: 32, l: 360 },
+  yaxis: \{ tickfont: \{ size: 10 } },
   title: \{ text: 'Latency percentiles (heatmap)' },
 };
 
@@ -560,7 +562,7 @@ const rssLayout = \{
   font: SHARED_FONT,
   yaxis: \{ title: \{ text: 'RSS (kB)' } },
   xaxis: \{ title: \{ text: 'elapsed (s)' } },
-  margin: \{ t: 40, r: 16, b: 48, l: 80 },
+  margin: \{ t: 80, r: 16, b: 48, l: 80 },
   title: \{ text: 'RSS over time' },
 };
 
@@ -624,7 +626,7 @@ function makeDiffBars(filtered) \{
 const diffLayout = \{
   font: SHARED_FONT,
   yaxis: \{ title: \{ text: '% delta (B vs A)' } },
-  margin: \{ t: 40, r: 16, b: 48, l: 80 },
+  margin: \{ t: 80, r: 16, b: 72, l: 80 },
   title: \{ text: 'A/B comparison' },
   shapes: [\{
     type: 'line',
