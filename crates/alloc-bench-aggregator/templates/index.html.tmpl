@@ -536,8 +536,44 @@ const latencyLayout = \{
 };
 
 // --- Chart 3: RSS over time ---
+//
+// 260523-8jf Task 2: cap series count to the cells nominated by the A/B
+// picker. The user already chose those two cells as "interesting" via
+// `readAbSelections()`, so reusing the existing UI element avoids adding
+// a new control. When A==B (degenerate config) we fall back to the first
+// 12 cells alphabetically so the chart stays useful before the user has
+// differentiated A from B.
 function makeRssLines(filtered) \{
-  const sorted = filtered.slice().sort((a, b) => \{
+  const ab = readAbSelections();
+  const aKey = ab.a.alloc + '|' + ab.a.env;
+  const bKey = ab.b.alloc + '|' + ab.b.env;
+  const sameCell = aKey === bKey;
+  let candidates;
+  if (sameCell) \{
+    // Degenerate A==B → fall back to first 12 cells alphabetically.
+    const seen = new Set();
+    const ordered = filtered.slice().sort((a, b) => \{
+      const ka = a.build.allocator + '|' + envLabel(a) + '|' + a.scenario.name;
+      const kb = b.build.allocator + '|' + envLabel(b) + '|' + b.scenario.name;
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+    candidates = [];
+    for (const r of ordered) \{
+      const k = r.build.allocator + '|' + envLabel(r);
+      if (!seen.has(k) && seen.size < 12) \{
+        seen.add(k);
+      }
+      if (seen.has(k)) \{
+        candidates.push(r);
+      }
+    }
+  } else \{
+    candidates = filtered.filter(r => \{
+      const k = r.build.allocator + '|' + envLabel(r);
+      return k === aKey || k === bKey;
+    });
+  }
+  const sorted = candidates.slice().sort((a, b) => \{
     const ka = a.build.allocator + '|' + envLabel(a) + '|' + a.scenario.name;
     const kb = b.build.allocator + '|' + envLabel(b) + '|' + b.scenario.name;
     return ka < kb ? -1 : ka > kb ? 1 : 0;
@@ -563,7 +599,7 @@ const rssLayout = \{
   yaxis: \{ title: \{ text: 'RSS (kB)' } },
   xaxis: \{ title: \{ text: 'elapsed (s)' } },
   margin: \{ t: 80, r: 16, b: 48, l: 80 },
-  title: \{ text: 'RSS over time' },
+  title: \{ text: 'RSS over time<br><sub>showing the two cells selected in the A/B picker below</sub>' },
 };
 
 // --- Chart 4: A/B comparison-diff ---

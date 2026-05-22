@@ -677,3 +677,87 @@ fn aggregator_meta_sidecar_populates_image_size_mb() {
         "expected D-13 sidecar footnote when --meta is supplied:\n{md}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 260523-8jf: layout-fix regression asserts (Task 1 + Task 2)
+// ---------------------------------------------------------------------------
+//
+// Each assert pins ONE concrete edit so a future drift back to the cramped
+// layout is caught structurally, not visually.
+
+/// 260523-8jf Edit B (Task 1): rendered HTML carries the new clipping-fix
+/// margin numbers on every chart layout. We anchor on the literal
+/// `t: 80` substring (was `t: 40`) appearing at least 4 times — once per
+/// chart layout — so a future drift back to `t: 40` is caught.
+#[test]
+fn aggregator_html_chart_layouts_have_t80_top_margin() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    let count = html.matches("t: 80").count();
+    assert!(
+        count >= 4,
+        "expected >=4 `t: 80` occurrences (one per chart layout), got {count}"
+    );
+}
+
+/// 260523-8jf Edit C (Task 1): latency heatmap left margin is wide enough
+/// for the longest cell legend label (≈ 65 chars). The literal `l: 360`
+/// substring is the structural pin.
+#[test]
+fn aggregator_html_latency_heatmap_has_wide_left_margin() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains("l: 360"),
+        "expected `l: 360` (heatmap left margin) in index.html"
+    );
+}
+
+/// 260523-8jf Edit F (Task 1): modebar docked at bottom so it cannot
+/// overlap chart titles.
+#[test]
+fn aggregator_html_modebar_docked_bottom() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains("modeBarPosition: 'bottom'"),
+        "expected `modeBarPosition: 'bottom'` in PLOTLY_CONFIG"
+    );
+}
+
+/// 260523-8jf Task 2: RSS chart restricts itself to A/B picker selections.
+/// The literal `readAbSelections` call inside `makeRssLines` is the
+/// structural pin; if a future refactor removes the cap, this test fires.
+#[test]
+fn aggregator_html_rss_chart_caps_to_ab_picker_cells() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    // makeRssLines body must call readAbSelections() — proves the cap is
+    // wired. Anchor on the function name + the same-cell-fallback comment.
+    let make_rss = html
+        .find("function makeRssLines")
+        .expect("makeRssLines must be defined");
+    let tail = &html[make_rss..];
+    let next_function = tail
+        .find("\nfunction ")
+        .map(|i| make_rss + i)
+        .unwrap_or(html.len());
+    let body = &html[make_rss..next_function];
+    assert!(
+        body.contains("readAbSelections"),
+        "makeRssLines must call readAbSelections() to cap series count"
+    );
+    // Hint subtitle wires into the chart title so users know about the cap.
+    assert!(
+        html.contains("showing the two cells selected in the A/B picker below"),
+        "rssLayout title must surface the A/B-picker cap hint"
+    );
+}
+
+/// 260523-8jf Task 1 (Edit A): chart-card min-height widened to 480px so
+/// the 2x2 grid gives each chart enough vertical room for title + modebar
+/// + plot area + legend.
+#[test]
+fn aggregator_html_chart_cards_have_min_height_480() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains("min-height: 480px"),
+        "expected `min-height: 480px` on .chart-card"
+    );
+}
