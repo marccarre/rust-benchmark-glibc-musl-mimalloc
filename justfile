@@ -67,6 +67,33 @@ build env alloc:
             exit 1
             ;;
     esac
+    # UAT Phase 5.1 Gap 1: Apple Silicon Rosetta cannot reliably execute the AVX2/BMI2
+    # instructions emitted by the Phase 3 D-09 `target-cpu=x86-64-v3` baseline; cells
+    # SIGSEGV (exit 139) on launch. Honor a user-supplied BENCH_TARGET_CPU override
+    # OR auto-detect Apple Silicon (arm64+Darwin → x86-64-v2) and forward the result
+    # to the Dockerfile via --build-arg RUSTFLAGS_OVERRIDE. Empty override → Dockerfile
+    # default (`-C target-cpu=x86-64-v3`) fires unchanged → v1.0 CI invariant preserved.
+    : "${BENCH_TARGET_CPU:=}"
+    if [ -z "$BENCH_TARGET_CPU" ] && [ "$(uname -m)" = "arm64" ] && [ "$(uname -s)" = "Darwin" ]; then
+        BENCH_TARGET_CPU="x86-64-v2"
+        echo "[apple-silicon] auto-detected; using target-cpu=x86-64-v2 (override BENCH_TARGET_CPU=... to change)" >&2
+    fi
+    # Compute the override string. Contract (a): the Dockerfile's ${RUSTFLAGS_OVERRIDE:-<default>}
+    # REPLACES the entire RUSTFLAGS string when non-empty, so for distroless-static + scratch
+    # we must re-append `-C target-feature=+crt-static` here (the static-libc Dockerfiles need
+    # +crt-static or the binary won't link against the empty-libc runtime).
+    if [ -n "$BENCH_TARGET_CPU" ]; then
+        case "{{env}}" in
+            distroless-static|scratch)
+                RUSTFLAGS_OVERRIDE="-C target-cpu=${BENCH_TARGET_CPU} -C target-feature=+crt-static"
+                ;;
+            *)
+                RUSTFLAGS_OVERRIDE="-C target-cpu=${BENCH_TARGET_CPU}"
+                ;;
+        esac
+    else
+        RUSTFLAGS_OVERRIDE=""
+    fi
     # Compute OCI annotation values from authoritative sources.
     OCI_VERSION=$(grep -m1 '^version' crates/alloc-bench-cli/Cargo.toml | cut -d'"' -f2)
     OCI_REVISION=$(git rev-parse HEAD)
@@ -77,6 +104,7 @@ build env alloc:
         --build-arg ALLOC={{alloc}} \
         --build-arg TARGET="$TARGET" \
         --build-arg RUST_VERSION=1.91 \
+        --build-arg RUSTFLAGS_OVERRIDE="$RUSTFLAGS_OVERRIDE" \
         --build-arg OCI_VERSION="$OCI_VERSION" \
         --build-arg OCI_REVISION="$OCI_REVISION" \
         --build-arg OCI_CREATED="$OCI_CREATED" \
@@ -210,6 +238,17 @@ bench-all-smoke:
     #!/usr/bin/env bash
     set -uo pipefail
     BENCH_SMOKE=1 just bench-all
+
+# Convenience recipe for Apple Silicon hosts — sets BENCH_TARGET_CPU=x86-64-v2 to
+# avoid the Rosetta+v3 SIGSEGV (UAT Phase 5.1 Gap 1; see README §Troubleshooting).
+# The build recipe also auto-detects arm64+Darwin and applies the same v2 default,
+# so this wrapper is purely a discoverable `just --list` entry — both
+# `just bench-all-smoke` and `just bench-all-smoke-apple-silicon` produce
+# identical Apple-Silicon behavior.
+bench-all-smoke-apple-silicon:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    BENCH_TARGET_CPU=x86-64-v2 just bench-all-smoke
 
 # Native macOS / Linux host bench — libmalloc / ptmalloc baseline (D-18, D-19).
 # No Docker. .cargo/config.toml's `target-cpu=native` is honored automatically;

@@ -38,7 +38,14 @@ FROM chef AS builder
 ARG ALLOC=mallocng
 ARG TARGET=x86_64-unknown-linux-musl
 # REQUIRED: scratch has nothing; binary must be fully static.
-ENV RUSTFLAGS="-C target-cpu=x86-64-v3 -C target-feature=+crt-static"
+# Override mechanism for Apple Silicon Rosetta — see UAT Phase 5.1 / debug/apple-silicon-segfault.md
+# When --build-arg RUSTFLAGS_OVERRIDE is absent or empty, the ${VAR:-default} expansion
+# falls through to the v3 + crt-static literal (preserves v1.0 CI invariant). When the
+# justfile auto-detects Apple Silicon, it forwards a full
+# `-C target-cpu=x86-64-v2 -C target-feature=+crt-static` override (the override
+# REPLACES the whole RUSTFLAGS string, so +crt-static must be re-included).
+ARG RUSTFLAGS_OVERRIDE=""
+ENV RUSTFLAGS="${RUSTFLAGS_OVERRIDE:--C target-cpu=x86-64-v3 -C target-feature=+crt-static}"
 RUN rustup target add ${TARGET}
 COPY --from=planner /app/recipe.json recipe.json
 RUN if [ "$ALLOC" = "jemalloc" ]; then \
