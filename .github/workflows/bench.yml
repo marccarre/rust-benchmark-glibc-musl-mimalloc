@@ -241,9 +241,10 @@ jobs:
       - name: Reorganize artifacts (results/ + meta/)
         run: |
           mkdir -p results meta
-          mv artifacts/*-seed*.json results/ 2>/dev/null || true
-          mv artifacts/*.json        meta/    2>/dev/null || true
-          ls -la results/ meta/ || true
+          ls -la artifacts/
+          mv artifacts/results/*.json results/
+          mv artifacts/meta/*.json    meta/
+          ls -la results/ meta/
 
       # Plan 03 implements the body of `ci-aggregate`. Until then this step
       # exits 1 with the documented stub message — surfaces the hand-off
