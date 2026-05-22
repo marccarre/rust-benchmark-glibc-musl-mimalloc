@@ -1,8 +1,8 @@
 ---
 phase: 04-aggregator-dashboard
 verified: 2026-05-19T00:00:00Z
-status: human_needed
-score: 4/5 must-haves verified
+status: passed
+score: 5/5 must-haves verified (2 human-UAT items confirmed 2026-05-23)
 overrides_applied: 0
 overrides:
   - must_have: "throughput bar chart faceted by env"

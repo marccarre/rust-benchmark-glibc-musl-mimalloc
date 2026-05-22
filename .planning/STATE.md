@@ -81,9 +81,9 @@ Items acknowledged and deferred at milestone close on 2026-05-19:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| uat_gap | Phase 04 — 04-HUMAN-UAT.md (2 open scenarios) | partial | v1.0 close |
+| uat_gap | Phase 04 — 04-HUMAN-UAT.md (2/2 passed) | resolved 2026-05-23 | v1.0 close |
 | uat_gap | Phase 05 — 05-HUMAN-UAT.md (2 open scenarios) | partial | v1.0 close |
-| verification_gap | Phase 04 — 04-VERIFICATION.md | human_needed | v1.0 close |
+| verification_gap | Phase 04 — 04-VERIFICATION.md | resolved 2026-05-23 (passed) | v1.0 close |
 | verification_gap | Phase 05 — 05-VERIFICATION.md | human_needed | v1.0 close |
 
 ## Session Continuity
