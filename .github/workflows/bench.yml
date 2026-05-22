@@ -19,7 +19,7 @@
 #   D-03: scenarios run sequentially within a cell (just ci-bench-cell
 #         → run-all-smoke).
 #   D-04: 3 runs per cell with seeds 1/2/3.
-#   D-05: per-cell upload via actions/upload-artifact@v4 (unique name);
+#   D-05: per-cell upload via actions/upload-artifact@v7 (unique name);
 #         aggregate uses pattern + merge-multiple.
 #   D-06: concurrency group cancels in-progress on non-default branches;
 #         main is never cancelled.
@@ -60,7 +60,7 @@ concurrency:
   group: bench-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# RESEARCH §Open Questions ¶2: belt-and-suspenders. actions/upload-artifact@v4
+# RESEARCH §Open Questions ¶2: belt-and-suspenders. actions/upload-artifact@v7
 # uses the implicit GITHUB_TOKEN; declaring the minimum permissions explicitly
 # documents intent + survives org-level default-token-policy hardening.
 permissions:
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@1.91.0
         with:
@@ -93,7 +93,7 @@ jobs:
         with:
           shared-key: pre-bench
 
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
 
       - name: Validate (fmt + clippy + dce-check)
         run: just ci-validate
@@ -135,11 +135,11 @@ jobs:
           - { env: scratch,            alloc: jemalloc, libc: musl,  target: x86_64-unknown-linux-musl }
           - { env: scratch,            alloc: mimalloc, libc: musl,  target: x86_64-unknown-linux-musl }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
 
       # RESEARCH §Pitfall 6: per-cell shared-key shields each cell from
       # whole-repo cache loss when an unrelated dev-dep bumps Cargo.lock.
@@ -161,7 +161,7 @@ jobs:
       # builds don't overwrite each other's `buildkit` cache key.
       - name: Build image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/${{ matrix.env }}.Dockerfile
@@ -193,11 +193,11 @@ jobs:
       - name: Run bench (3 seeds + meta capture)
         run: just ci-bench-cell ${{ matrix.env }} ${{ matrix.alloc }}
 
-      # RESEARCH §Pattern 2: unique artifact name per cell. v4 is required
-      # for the matrix unique-name-per-job model. `if-no-files-found: error`
+      # RESEARCH §Pattern 2: unique artifact name per cell. v4+ supports
+      # the matrix unique-name-per-job model. `if-no-files-found: error`
       # surfaces missing output (e.g. a wedged docker run) as a hard fail.
       - name: Upload per-cell artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-${{ matrix.alloc }}-${{ matrix.env }}
           path: |
@@ -219,7 +219,7 @@ jobs:
     # (Phase 4 D-08).
     if: always()
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@1.91.0
 
@@ -227,12 +227,12 @@ jobs:
         with:
           shared-key: aggregate
 
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
 
       # RESEARCH §Pattern 2: glob + merge-multiple flattens the per-cell
       # artifacts into one ./artifacts directory.
       - name: Download all per-cell artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ./artifacts
           pattern: results-*
@@ -253,7 +253,7 @@ jobs:
         run: just ci-aggregate
 
       - name: Upload report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-report-${{ github.run_id }}
           path: report/
