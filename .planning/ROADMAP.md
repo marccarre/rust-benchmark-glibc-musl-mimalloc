@@ -3,6 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-5 (shipped 2026-05-19)
+- 🛠 **Post-ship surgical fixes** — Phase 5.1 (UAT gap closure, opened 2026-05-23)
 
 ## Phases
 
@@ -19,6 +20,18 @@ See `.planning/milestones/v1.0-ROADMAP.md` for full phase details and `.planning
 
 </details>
 
+### Phase 5.1: UAT Gap Closure (post-v1.0)
+
+**Goal:** Close the two UAT blockers found 2026-05-23 by `/gsd:verify-work` against the deferred Phase 5 UAT items: (1) all 18 cells SIGSEGV on Apple Silicon (Rosetta+v3 incompatibility — REPR-01); (2) GHA aggregate-report job fails because `Reorganize artifacts` step's `mv` patterns target the wrong directory level (ORCH-04). v1.0 archive is read-only; fix plans live in `.planning/phases/05.1-uat-gap-closure/` and ship as a 5.1 surgical patch on top of the v1.0 release.
+
+**Requirements:** REPR-01, ORCH-04
+
+**Plans:** 2 plans (both Wave 1 — independent, zero file overlap, fully parallel)
+
+Plans:
+- [ ] 05.1-01-PLAN.md — Apple Silicon Rosetta+v3 SIGSEGV fix (Dockerfiles + justfile + README)
+- [ ] 05.1-02-PLAN.md — GHA aggregate-step mv-source path fix (.github/workflows/bench.yml)
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -28,3 +41,4 @@ See `.planning/milestones/v1.0-ROADMAP.md` for full phase details and `.planning
 | 3. Docker Matrix & Local Orchestration | v1.0 | 3/5 | Partial (deferred to Phase 5 CI) | 2026-05-19 |
 | 4. Aggregator & Dashboard | v1.0 | 3/3 | Complete | 2026-05-19 |
 | 5. CI, Image-Size Gate & Public Polish | v1.0 | 4/4 | Complete | 2026-05-19 |
+| 5.1. UAT Gap Closure | post-v1.0 | 0/2 | Active | — |
