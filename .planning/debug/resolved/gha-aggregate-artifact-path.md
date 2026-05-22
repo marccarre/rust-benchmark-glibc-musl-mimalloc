@@ -1,8 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "GHA aggregate-report job fails with `no results found matching pattern \"results/*.json\"` — UAT 2026-05-23 phase 05; all 18 bench-matrix cells passed, but aggregate job fails because `Reorganize artifacts` mv targets the wrong directory level."
 created: 2026-05-23T00:00:00Z
-updated: 2026-05-23T00:00:00Z
+updated: 2026-05-22T19:42:00Z
+resolved_in: "Phase 05.1 plan 05.1-02 (commits 6719851, 126e3f0)"
 specialist_hint: general
 ---
 

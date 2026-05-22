@@ -1,8 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Apple Silicon Rosetta SIGSEGV on bench-all-smoke — UAT 2026-05-23 phase 05 found all 18 cells fail with exit 139 on macOS arm64 (orbstack), but GHA x86-64 ubuntu-24.04 passes 18/18."
 created: 2026-05-23T00:00:00Z
-updated: 2026-05-23T00:00:00Z
+updated: 2026-05-22T19:42:00Z
+resolved_in: "Phase 05.1 plan 05.1-01 (commits 178082a, fc23505, b4d2d5f, a1659be)"
 ---
 
 ## Current Focus
