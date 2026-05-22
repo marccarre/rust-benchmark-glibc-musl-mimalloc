@@ -24,7 +24,14 @@ ARG ALLOC=ptmalloc
 ARG TARGET=x86_64-unknown-linux-gnu
 # Override .cargo/config.toml's target-cpu=native (Pitfall §2). x86-64-v3 is
 # portable across modern CI runners; do NOT add +crt-static (glibc dynamic).
-ENV RUSTFLAGS="-C target-cpu=x86-64-v3"
+# Override mechanism for Apple Silicon Rosetta — see UAT Phase 5.1 / debug/apple-silicon-segfault.md
+# When --build-arg RUSTFLAGS_OVERRIDE is absent or empty, the ${VAR:-default} expansion
+# falls through to `-C target-cpu=x86-64-v3` (preserves v1.0 CI invariant). When the
+# justfile auto-detects Apple Silicon (arm64+Darwin), it forwards
+# `--build-arg RUSTFLAGS_OVERRIDE="-C target-cpu=x86-64-v2"` so the resulting binary
+# does not emit AVX2/BMI2 instructions that Rosetta-2 cannot execute (exit 139).
+ARG RUSTFLAGS_OVERRIDE=""
+ENV RUSTFLAGS="${RUSTFLAGS_OVERRIDE:--C target-cpu=x86-64-v3}"
 RUN rustup target add ${TARGET}
 COPY --from=planner /app/recipe.json recipe.json
 RUN if [ "$ALLOC" = "jemalloc" ]; then \
