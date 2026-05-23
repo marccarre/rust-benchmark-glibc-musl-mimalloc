@@ -43,13 +43,24 @@ fn run_all_emits_one_record_per_scenario() {
     let out: PathBuf = dir.path().join("all.json");
 
     let mut cmd = Command::cargo_bin("alloc-bench-cli").expect("cargo bin");
-    cmd.args(["run-all", "--seed", "12345", "--output"])
-        .arg(&out);
-    // run-all default config: 10 scenarios × (1s warmup + 5s measure) ≈ 60s,
-    // plus ~ms-scale fixed overhead per scenario. assert_cmd's default
+    cmd.args([
+        "run-all",
+        "--seed",
+        "12345",
+        "--warmup",
+        "1s",
+        "--duration",
+        "5s",
+        "--output",
+    ])
+    .arg(&out);
+    // Smoke-shape config: 10 scenarios × (1s warmup + 5s measure) ≈ 60s,
+    // plus ~ms-scale fixed overhead per scenario. The CLI defaults are
+    // 5s/60s (canonical local-bench shape); this test pins the smoke
+    // shape explicitly so it runs in ~60s on CI. assert_cmd's default
     // timeout is none; CI budgets typically allow 3-5min for a single
-    // integration test which is well above the ~90s upper bound on a slow
-    // host.
+    // integration test which is well above the ~90s upper bound on a
+    // slow host.
     cmd.assert().success();
 
     let raw = std::fs::read_to_string(&out).expect("read all.json");
