@@ -412,3 +412,94 @@ ci-validate:
 ci-aggregate:
     cargo run --release -p alloc-bench-aggregator -- \
         --input "results/*.json" --meta "meta/*.json" --output report/
+
+# ──────────────────────────────────────────────────────────────────────
+# Pages publishing (quick task 260523-k8f).
+# ──────────────────────────────────────────────────────────────────────
+
+# Publish the local Plotly HTML dashboard to GitHub Pages by pushing
+# `report/index.html` to the orphan `gh-pages` branch.
+#
+# Why this exists: `report/` is .gitignored on `main` (so the rendered
+# dashboard never enters the main-branch history), and the project
+# deliberately ships no GHA Pages workflow — the publish step is a
+# one-shot, opt-in, manual recipe. The orphan `gh-pages` branch carries
+# nothing but `index.html` at its root, so GitHub Pages serves it as
+# the site's landing page at:
+#   https://marccarre.github.io/rust-benchmark-glibc-musl-mimalloc/
+#
+# Prerequisite: run `just aggregate` first to (re)generate
+# `report/index.html`. This recipe will NOT auto-aggregate; it fails
+# fast with a clear error if `report/index.html` is missing.
+#
+# Idempotency: works whether the `gh-pages` branch exists nowhere, only
+# on `origin`, or both locally and remotely. The recipe uses a temporary
+# `git worktree` to avoid disturbing the user's working tree, and an EXIT
+# trap to remove the worktree even on partial failure or Ctrl-C.
+#
+# Re-running with no dashboard changes is a no-op-but-success (prints
+# `[publish-pages] no changes to publish`).
+#
+# Usage:
+#   just publish-pages
+publish-pages:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -f report/index.html ]; then
+        echo "[ERR] report/index.html does not exist; run 'just aggregate' first to generate the dashboard." >&2
+        exit 1
+    fi
+    # Capture source ref BEFORE creating the worktree so the values
+    # reflect the user's working tree, not the gh-pages worktree.
+    SRC_SHA=$(git rev-parse --short HEAD)
+    SRC_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    # Allocate the temp worktree path FIRST and register cleanup BEFORE
+    # `git worktree add` runs — so a failure between `mktemp` and
+    # `worktree add` (or anywhere afterwards, including Ctrl-C) is still
+    # cleaned up.
+    WORKTREE_DIR=$(mktemp -d -t gh-pages-XXXXXX)
+    cleanup() {
+        if git worktree list --porcelain 2>/dev/null | grep -q "$WORKTREE_DIR"; then
+            git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
+        fi
+        rm -rf "$WORKTREE_DIR"
+    }
+    trap cleanup EXIT
+    # Fetch any remote `gh-pages` so we know its state. The `:gh-pages`
+    # form creates the local branch tracking the remote. `|| true` is
+    # critical — fresh repos have no remote `gh-pages` yet and the fetch
+    # will fail; that's expected.
+    git fetch origin gh-pages:gh-pages 2>/dev/null || true
+    # Three-case worktree creation, idempotent across all branch states.
+    if git show-ref --verify --quiet refs/heads/gh-pages; then
+        # Branch exists locally → reuse it.
+        git worktree add "$WORKTREE_DIR" gh-pages
+    elif git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+        # Branch exists on remote but the fetch did not create the local
+        # ref (rare; defensive) — bind a new local branch to origin's tip.
+        git worktree add -b gh-pages "$WORKTREE_DIR" origin/gh-pages
+    else
+        # First publish ever — create an orphan branch with no history.
+        git worktree add --orphan -b gh-pages "$WORKTREE_DIR"
+        # Orphan branches can still inherit the working tree's index in
+        # some git versions; clear it so the new commit contains only
+        # `index.html`.
+        (cd "$WORKTREE_DIR" && git rm -rf . 2>/dev/null || true)
+    fi
+    # Copy ONLY `report/index.html` — never `report/REPORT.md` or any
+    # other file under `report/`. The gh-pages branch is the dashboard,
+    # nothing else.
+    cp report/index.html "$WORKTREE_DIR/index.html"
+    # Commit + push from inside the worktree. The subshell keeps the
+    # parent shell's CWD unchanged.
+    (
+        cd "$WORKTREE_DIR"
+        git add index.html
+        if git diff --cached --quiet; then
+            echo "[publish-pages] no changes to publish (index.html identical to gh-pages HEAD)"
+        else
+            git commit -m "Publish dashboard from ${SRC_BRANCH}@${SRC_SHA}"
+            git push origin gh-pages
+        fi
+    )
+    echo "[publish-pages] published — visit https://marccarre.github.io/rust-benchmark-glibc-musl-mimalloc/ (may take a minute on first publish)"
