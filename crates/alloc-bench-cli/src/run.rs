@@ -771,17 +771,19 @@ fn degenerate_failure_run(name: &str, error: String) -> Result<Run> {
     )
 }
 
-/// Phase-2 SCEN-11. Run all 10 scenarios sequentially under a uniform light
-/// HarnessConfig (warmup=1s + duration=5s) and emit a JSON array of Run
-/// records. Per CONTEXT.md decision, per-scenario panics are caught via
-/// `panic::catch_unwind(AssertUnwindSafe(...))` so the other scenarios
-/// still produce records — the run-all binary exits 0 even when scenarios
-/// fail. The `error` field on each Run is the source of truth for failure
-/// cases; consumers reading `status == "failed"` MUST also read `error`.
-pub fn run_all(output: Option<&str>, seed: u64) -> Result<()> {
+/// Phase-2 SCEN-11. Run all 10 scenarios sequentially under a uniform
+/// HarnessConfig and emit a JSON array of Run records. Defaults come from
+/// the CLI layer (`--warmup 5s --duration 60s`); this function honors
+/// whatever is passed in. Per CONTEXT.md decision, per-scenario panics
+/// are caught via `panic::catch_unwind(AssertUnwindSafe(...))` so the
+/// other scenarios still produce records — the run-all binary exits 0
+/// even when scenarios fail. The `error` field on each Run is the source
+/// of truth for failure cases; consumers reading `status == "failed"`
+/// MUST also read `error`.
+pub fn run_all(output: Option<&str>, seed: u64, warmup: &str, duration: &str) -> Result<()> {
     let cfg = HarnessConfig {
-        warmup: Duration::from_secs(1),
-        measure: Duration::from_secs(5),
+        warmup: parse_duration(warmup)?,
+        measure: parse_duration(duration)?,
         seed,
     };
 
