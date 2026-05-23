@@ -22,7 +22,7 @@ tikv-jemallocator = "0.6"
 tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
 mimalloc = { version = "0.1", default-features = false, features = ["extended"] }
 libmimalloc-sys = { version = "0.1", features = ["extended"] }
-num_cpus = "1.16"
+num_cpus = "1.17"
 crossbeam-channel = "0.5"
 axum = { version = "0.8", default-features = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
