@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 # alpine.Dockerfile — musl dynamic runtime (mallocng / jemalloc / mimalloc).
-# Phase 3 Plan 02 / Task 1. Builder: rust:1.91-alpine (rust-toolchain.toml=1.91;
+# Phase 3 Plan 02 / Task 1. Builder: rust:1.95-alpine (rust-toolchain.toml=1.95;
 # CONTEXT D-06 originally said 1.83 — supersede on the rust-toolchain pin).
-ARG RUST_VERSION=1.91
+ARG RUST_VERSION=1.95
 
 # ─── Stage 1: chef base ────────────────────────────────────────────
 FROM rust:${RUST_VERSION}-alpine AS chef
@@ -10,7 +10,7 @@ FROM rust:${RUST_VERSION}-alpine AS chef
 # make + g++ + cmake + linux-headers + bash + file: required by tikv-jemalloc-sys
 # 0.6.1 (autoconf/configure → make pipeline) and libmimalloc-sys 0.1.47 (cmake)
 # native build scripts. Plan 03-04 Task 1 deviation Rule 3 (blocking issue):
-# rust:1.91-alpine ships gcc but not make/cmake; adding them is a build-time
+# rust:1.95-alpine ships gcc but not make/cmake; adding them is a build-time
 # requirement, not a runtime concern (the binary is statically/dynamically
 # linked against the allocator and doesn't need these tools at runtime).
 RUN apk add --no-cache musl-dev pkgconfig make g++ cmake linux-headers bash file
@@ -62,8 +62,8 @@ RUN if [ "$ALLOC" = "jemalloc" ]; then \
     cargo build --release --target ${TARGET} ${FEATURES} \
         -p alloc-bench-cli
 
-# ─── Stage 4: runtime — alpine:3.20 (matches success criterion 2 literal) ──
-FROM alpine:3.20 AS runtime
+# ─── Stage 4: runtime — alpine:3.23 (matches success criterion 2 literal) ──
+FROM alpine:3.23 AS runtime
 ARG OCI_VERSION
 ARG OCI_REVISION
 ARG OCI_CREATED
@@ -75,6 +75,6 @@ LABEL org.opencontainers.image.title="alloc-bench" \
       org.opencontainers.image.licenses="MIT OR Apache-2.0" \
       org.opencontainers.image.created="${OCI_CREATED}" \
       org.opencontainers.image.authors="Marc Carré"
-ENV DOCKER_IMAGE=alpine:3.20
+ENV DOCKER_IMAGE=alpine:3.23
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/alloc-bench-cli /usr/local/bin/alloc-bench-cli
 ENTRYPOINT ["/usr/local/bin/alloc-bench-cli"]

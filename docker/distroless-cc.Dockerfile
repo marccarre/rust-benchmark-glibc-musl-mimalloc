@@ -3,10 +3,10 @@
 # Pattern: cargo-chef 3-stage (chef → planner → builder) + per-env runtime.
 # Source: 03-RESEARCH.md §"Pattern 1" + §"Pitfall 4 — distroless nonroot".
 
-# RUST_VERSION matches rust-toolchain.toml (channel = "1.91"). Matches the
+# RUST_VERSION matches rust-toolchain.toml (channel = "1.95"). Matches the
 # toolchain channel so rustup does not download a second toolchain at build
 # time (the original CONTEXT D-06 listed 1.83 before the toolchain was bumped).
-ARG RUST_VERSION=1.91
+ARG RUST_VERSION=1.95
 
 # ─── Stage 1: chef base ────────────────────────────────────────────
 FROM rust:${RUST_VERSION}-bookworm AS chef

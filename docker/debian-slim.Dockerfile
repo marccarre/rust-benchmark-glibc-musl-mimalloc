@@ -3,10 +3,10 @@
 # Pattern: cargo-chef 3-stage (chef → planner → builder) + per-env runtime.
 # Source: 03-RESEARCH.md §"Pattern 1" + §"Code Examples §1".
 
-# RUST_VERSION matches rust-toolchain.toml (channel = "1.91"). The original
-# CONTEXT D-06 cited 1.83; we use 1.91 because rustup honors rust-toolchain.toml
+# RUST_VERSION matches rust-toolchain.toml (channel = "1.95"). The original
+# CONTEXT D-06 cited 1.83; we use 1.95 because rustup honors rust-toolchain.toml
 # at build time anyway — matching the toolchain saves one redundant download.
-ARG RUST_VERSION=1.91
+ARG RUST_VERSION=1.95
 
 # ─── Stage 1: chef base ────────────────────────────────────────────
 FROM rust:${RUST_VERSION}-bookworm AS chef
