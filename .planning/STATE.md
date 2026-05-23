@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: MVP
 status: executing
 stopped_at: Phase 1 context gathered
-last_updated: "2026-05-22T22:30:00.000Z"
-last_activity: 2026-05-23 -- Completed quick task 260523-lxp: Latest-versions sweep (rustc 1.91→1.95, alpine 3.20→3.23, etc.)
+last_updated: "2026-05-23T19:30:00.000Z"
+last_activity: 2026-05-24 -- Completed quick task 260524-3hd: Add clean-all + build-all just recipes
 progress:
   total_phases: 1
   completed_phases: 0
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-17)
 Phase: 05.1 (uat-gap-closure) — EXECUTING
 Plan: 1 of 2
 Status: Executing Phase 05.1
-Last activity: 2026-05-23 -- Completed quick task 260523-lxp: Latest-versions sweep
+Last activity: 2026-05-24 -- Completed quick task 260524-3hd: Add clean-all + build-all just recipes
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ None yet.
 | 260523-8jf | Fix unreadable HTML report layout: charts cramped, titles clipped, labels truncated | 2026-05-22 | 4701e60 | [260523-8jf-fix-unreadable-html-report-layout-charts](./quick/260523-8jf-fix-unreadable-html-report-layout-charts/) |
 | 260523-k8f | Add publish-pages just recipe (gh-pages worktree, push report/index.html only) | 2026-05-23 | bb36e29 | [260523-k8f-add-a-just-command-to-push-report-index-](./quick/260523-k8f-add-a-just-command-to-push-report-index-/) |
 | 260523-lxp | Latest-versions sweep: rustc 1.91→1.95, MSRV collapsed, alpine 3.20→3.23, wolfi SHA refreshed; rand/reqwest major bumps rejected | 2026-05-23 | e668b8d | [260523-lxp-ensure-we-use-the-latest-version-of-each](./quick/260523-lxp-ensure-we-use-the-latest-version-of-each/) |
+| 260524-3hd | Add `just clean-all` (docker images + results/report/meta + cargo target) and `just build-all` (18 cells + host binary) | 2026-05-24 | 7f48e0d | [260524-3hd-add-a-just-clean-all-to-clean-everything](./quick/260524-3hd-add-a-just-clean-all-to-clean-everything/) |
 
 ## Deferred Items
 
