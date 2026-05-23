@@ -66,6 +66,9 @@ The full reproduction loop is five steps (plus an optional sixth — publish to 
    git clone https://github.com/marccarre/rust-benchmark-glibc-musl-mimalloc.git
    cd rust-benchmark-glibc-musl-mimalloc
    ```
+
+   Optionally, run `just build-all` first to pre-build all 18 Docker images plus the host `cargo build --release -p alloc-bench-cli` baseline — useful when you want the build phase visible separately from the bench phase, or to warm CI caches before timed runs.
+
 3. **Run the matrix.** Two recipes are available:
    - **Smoke run (~10 min)** — `just bench-all-smoke`. Uses `--warmup 1s --duration 5s` per scenario across all 18 cells × 10 scenarios × 3 seeds. Proves the loop end-to-end and catches regressions in *relative ordering*; not a statistical-quality run on its own (the smoke recipe is below the documented sample-count floor — see `.planning/research/PITFALLS.md` §1.4).
    - **Full run (~2.5 hours, ~5 GB disk)** — `just bench-all`. Uses `--warmup 5s --duration 60s` per scenario, the canonical statistical-quality measurement. Plan ~5 GB of free disk for the per-cell `results/*.json` plus the rendered `report/`.

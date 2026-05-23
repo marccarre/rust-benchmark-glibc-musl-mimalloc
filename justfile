@@ -139,6 +139,64 @@ bench-cell env alloc:
     just build {{env}} {{alloc}}
     just run {{env}} {{alloc}}
 
+# Build every image in the matrix (18 docker cells + the host cargo binary)
+# without running any benchmarks. Mirrors `bench-all`'s sequential per-cell
+# loop pattern: `set -uo` (not -e), per-cell OK/FAIL accumulation, banner
+# logging, and a final summary table.
+#
+# Why sequential, not parallel: parallel `docker buildx build` invocations
+# race on `.git/config.lock` and the buildx daemon's image-write path; the
+# sequential loop also lets BuildKit reuse the cargo-chef cook layer across
+# same-libc-family cells (the matrix is grouped glibc-first, then musl).
+#
+# Why NOT auto-invoked by `bench-all` / `bench-all-smoke`: those recipes
+# call `just bench-cell` per row, which already builds the image before
+# running. `build-all` is opt-in convenience for users who want the build
+# phase visible separately (e.g., to time it, or to warm CI caches before
+# a timed bench run).
+#
+# Exit status: zero if ALL 19 builds (18 docker cells + 1 host) succeed;
+# non-zero if any single build fails. The recipe ALWAYS prints the full
+# OK/FAIL summary table before exiting, regardless of failures.
+#
+# Usage:
+#   BENCH_TARGET_CPU=x86-64-v2 just build-all   # propagates into `just build`
+#   just build-all
+build-all:
+    #!/usr/bin/env bash
+    set -uo pipefail   # NOT -e — we want to continue past per-cell failures.
+    declare -a results=()
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        env="${line%% *}"
+        alloc="${line##* }"
+        echo
+        echo "════════════════════════════════════════════════════════"
+        echo "[${alloc}-${env}] starting"
+        echo "════════════════════════════════════════════════════════"
+        if just build "$env" "$alloc" 2>&1 | sed "s/^/[build-all][${alloc}-${env}] /"; then
+            results+=("OK   ${alloc}-${env}")
+        else
+            results+=("FAIL ${alloc}-${env}")
+        fi
+    done <<< '{{_matrix_cells}}'
+    echo
+    echo "════════════════════════════════════════════════════════"
+    echo "[host] starting"
+    echo "════════════════════════════════════════════════════════"
+    if cargo build --release -p alloc-bench-cli 2>&1 | sed "s/^/[build-all][host] /"; then
+        results+=("OK   host")
+    else
+        results+=("FAIL host")
+    fi
+    echo
+    echo "════════════════════════════════════════════════════════"
+    echo "Build summary"
+    echo "════════════════════════════════════════════════════════"
+    printf '%s\n' "${results[@]}"
+    failed=$(printf '%s\n' "${results[@]}" | grep -c "^FAIL " || true)
+    [[ "$failed" -gt 0 ]] && exit 1 || exit 0
+
 # Remove all alloc-bench:* image tags. The {{ "{{" }} below is just's
 # escaping for emitting a literal `{{` into the shell — `{{` is the
 # variable-interpolation marker. `xargs -r` avoids invoking `docker rmi`
@@ -148,6 +206,46 @@ clean-images:
     set -uo pipefail
     docker images --filter "reference=alloc-bench:*" --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}' \
         | xargs -r docker rmi -f
+
+# Full fresh-slate reset: remove all alloc-bench:* docker images, clear the
+# contents of results/ + report/ + meta/ (keeping the directories themselves),
+# and run `cargo clean`. Each step continues past failures via `|| true` so a
+# missing docker daemon, an absent results/ dir, or a stale cargo lock cannot
+# leave the working tree half-cleaned.
+#
+# Ordering rationale (cheapest+most-likely-to-fail first, slowest IO last):
+#   1. docker images — body replicated from `clean-images` so this recipe is
+#      self-contained (calling `just clean-images` would re-enter just with a
+#      fresh recipe context, obscuring the failure mode if the docker daemon
+#      is down). Most likely to fail (no docker, no images).
+#   2. filesystem cleanup — `rm -rf results/* report/* meta/*` via glob, NOT
+#      `rm -rf results report meta`: keep the directories so subsequent
+#      recipes (run, ci-bench-cell) don't have to recreate them. `2>/dev/null`
+#      swallows the "no matches" stderr when a glob expands to nothing.
+#   3. cargo clean — slowest IO; rewriting target/ from scratch costs the next
+#      `cargo build` ~30-60s, so put it last to maximize the chance of bailing
+#      out (Ctrl-C) before the most expensive step.
+#
+# Why no `set -e`: mirrors `bench-all` — we want all three steps to attempt
+# even if one fails (e.g., docker daemon down should not skip cargo clean).
+# Why no `docker buildx prune`: the BuildKit cache stores the cargo-chef cook
+# layer plus all per-base-image distroless/wolfi/alpine fetches; pruning it
+# costs ~10-15 min of re-warming on the next `just build-all` and offers no
+# disk savings the user can't get from `docker system prune` directly.
+#
+# Usage:
+#   just clean-all
+clean-all:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "[clean-all] removing alloc-bench:* docker images" >&2
+    docker images --filter "reference=alloc-bench:*" --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}' \
+        | xargs -r docker rmi -f || true
+    echo "[clean-all] clearing results/ report/ meta/ contents" >&2
+    rm -rf results/* report/* meta/* 2>/dev/null || true
+    echo "[clean-all] running cargo clean" >&2
+    cargo clean || true
+    echo "[clean-all] done" >&2
 
 # The 18-cell hard-coded valid (env, alloc) tuple list (D-01, D-04). Cross-libc
 # combos (mallocng on glibc, ptmalloc on musl) are STRUCTURALLY ABSENT — D-04's
