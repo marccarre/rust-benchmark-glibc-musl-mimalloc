@@ -453,8 +453,8 @@ mod tests {
     #[test]
     fn winner_picker_suspect_winner_appends_suspect_suffix() {
         let runs = vec![
-            // jemalloc winner with samples_count=5000 → suspect (low samples).
-            synth_run("jemalloc", "cpu-bound", 100.0, 5_000, 5.0),
+            // jemalloc winner with samples_count=500 → suspect (low samples, < 1_000).
+            synth_run("jemalloc", "cpu-bound", 100.0, 500, 5.0),
             synth_run("ptmalloc", "cpu-bound", 80.0, 50_000, 5.0),
         ];
         let recs = recommendations(&runs);

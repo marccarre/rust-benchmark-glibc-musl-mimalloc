@@ -28,7 +28,7 @@
     "harness": {
       "warmup_duration_s": 5.0,
       "measurement_duration_s": 5.0,
-      "samples_count": 5000
+      "samples_count": 500
     },
     "metrics": {
       "ticks_per_s": 100.0,

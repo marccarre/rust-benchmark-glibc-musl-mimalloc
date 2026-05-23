@@ -387,7 +387,9 @@ enum SuspectReason {
 }
 
 fn suspect_reason(h: &HarnessInfo) -> Option<SuspectReason> {
-    let low = h.samples_count < 10_000;
+    // SOURCE-OF-TRUTH lockstep with `crate::html::is_suspect` —
+    // threshold lowered from 10_000 in quick task 260524-5nc.
+    let low = h.samples_count < 1_000;
     let short = h.warmup_duration_s < 5.0;
     let reason = match (low, short) {
         (true, true) => Some(SuspectReason::Both),
@@ -539,7 +541,7 @@ mod tests {
     #[test]
     fn per_scenario_table_appends_suspect_note_to_low_samples_run() {
         let runs = vec![
-            make_run("jemalloc", "cpu-bound", 100.0, 5_000, 5.0, None), // low samples
+            make_run("jemalloc", "cpu-bound", 100.0, 500, 5.0, None), // low samples (< 1_000)
             make_run("ptmalloc", "cpu-bound", 80.0, 50_000, 5.0, None),
         ];
         let mut buf = String::new();
@@ -565,7 +567,7 @@ mod tests {
 
     #[test]
     fn per_scenario_table_marks_both_suspect_predicates() {
-        let runs = vec![make_run("jemalloc", "cpu-bound", 100.0, 5_000, 2.0, None)];
+        let runs = vec![make_run("jemalloc", "cpu-bound", 100.0, 500, 2.0, None)];
         let mut buf = String::new();
         emit_per_scenario_tables(&mut buf, &runs);
         assert!(

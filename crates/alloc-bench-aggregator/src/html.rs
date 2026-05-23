@@ -9,7 +9,7 @@
 //! (`scenarios_json`, `envs_json`, `allocators_json`, `suspect_pairs_json`)
 //! that the template consumes to seed the multi-select / A/B-picker option
 //! lists at page load. The canonical D-07 suspect predicate
-//! (`samples_count < 10_000 || warmup_duration_s < 5.0`) lives here too
+//! (`samples_count < 1_000 || warmup_duration_s < 5.0`) lives here too
 //! (`is_suspect`); Plan 03's recommend.rs will reuse it.
 //!
 //! Pitfall 1 (RESEARCH): tinytemplate parses `{` as a value substitution.
@@ -45,11 +45,15 @@ pub(crate) const PLOTLY_SRI_HASH: &str =
     "sha384-MqL7Cy3itNqCI1Wlc926K0XhyRKJ/NMqTaytIIEB+QIdInOploxqRIHRKLlhPykM";
 
 /// Canonical D-07 suspect predicate. A run is suspect when its harness
-/// shipped fewer than 10 000 samples or warmed up for less than 5 s.
+/// shipped fewer than 1 000 samples or warmed up for less than 5 s.
 /// Plan 03's `recommend.rs` is expected to import this exact function so
 /// the report and the dashboard agree on which runs are flagged.
+//
+// Lowered from 10 000 in quick task 260524-5nc; the original threshold
+// falsely flagged healthy 60s runs of slow scenarios (cpu-bound ~10 800
+// samples, multithread under tick-latency pressure).
 pub(crate) fn is_suspect(h: &HarnessInfo) -> bool {
-    h.samples_count < 10_000 || h.warmup_duration_s < 5.0
+    h.samples_count < 1_000 || h.warmup_duration_s < 5.0
 }
 
 #[derive(serde::Serialize)]
@@ -436,17 +440,17 @@ mod tests {
     }
 
     /// `suspect_pairs_json` lists every `{allocator}·{env}` combo whose
-    /// run trips `is_suspect`. Two synthetic runs: one suspect (samples=5_000),
+    /// run trips `is_suspect`. Two synthetic runs: one suspect (samples=500),
     /// one clean (samples=50_000) — only the suspect pair appears.
     #[test]
     fn context_marks_suspect_pairs() {
         let runs = vec![
-            // Suspect: samples_count < 10_000.
+            // Suspect: samples_count < 1_000.
             make_test_run(
                 "jemalloc",
                 Some("alloc-bench:jemalloc-alpine"),
                 "multithread",
-                5_000,
+                500,
             ),
             // Clean.
             make_test_run(

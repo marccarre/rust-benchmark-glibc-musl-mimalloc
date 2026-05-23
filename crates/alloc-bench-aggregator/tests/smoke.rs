@@ -316,9 +316,10 @@ fn aggregator_html_uses_plotly_react_not_newplot() {
 
 /// Behavior 3: the suspect ⚠ glyph (U+26A0 WARNING SIGN) appears at
 /// least once in the rendered HTML. Plan-01 fixtures include
-/// jemalloc-alpine with samples_count=5_000 → suspect → server-side
-/// bootstrap embeds `⚠ jemalloc·alloc-bench:jemalloc-alpine` in the
-/// SUSPECT_PAIRS array per Task 1.
+/// jemalloc-alpine with samples_count=500 → suspect (low-samples arm)
+/// → server-side bootstrap embeds
+/// `⚠ jemalloc·alloc-bench:jemalloc-alpine` in the SUSPECT_PAIRS array
+/// per Task 1.
 #[test]
 fn aggregator_html_marks_suspect_allocator_with_warning_glyph() {
     let (_dir, html) = run_aggregator_against_fixtures();
