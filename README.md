@@ -2,9 +2,42 @@
 
 # rust-benchmark-glibc-musl-mimalloc
 
-> Reproducible Rust allocator benchmarks across glibc/ptmalloc, musl/mallocng, jemalloc, and mimalloc — six libc·environment combinations × ten workload scenarios.
+Reproducible Rust allocator benchmarks across glibc/ptmalloc, musl/mallocng, jemalloc, and mimalloc — six libc·environment combinations × ten workload scenarios.
 
-This benchmark suite measures four memory allocators (glibc/ptmalloc, musl/mallocng, jemalloc, mimalloc) across eighteen meaningful (env × allocator) cells and ten workload scenarios (micro-allocation stress, web-service request/response, SPMC/MPSC/MPMC channel pipelines, CPU-bound, memory-bound, lock-contention). Every run is environment-labelled, dual-libc reproducible, and aggregated into both an interactive Plotly HTML dashboard at `report/index.html` and a Markdown report (`report/REPORT.md`) with Mermaid.js architecture diagrams. The GitHub Actions matrix runs on `ubuntu-24.04` with three seeds per cell to capture the *shape* of the curve (relative ordering across allocators), while the local `just bench-all` recipe is the canonical *statistical-quality* measurement (longer warmup + duration + more samples). Results carry both `⚠ suspect` (low samples / short warmup) and `⚠ high variance` (CV > 10%) flags so the reader always knows how much weight to put on a given number.
+## Summary
+
+This benchmark suite measures four memory allocators:
+
+- glibc/ptmalloc,
+- musl/mallocng,
+- jemalloc,
+- mimalloc,
+
+across eighteen meaningful (env × allocator) cells and ten workload scenarios:
+
+- micro-allocation stress,
+- web-service request/response,
+- SPMC/MPSC/MPMC channel pipelines,
+- CPU-bound,
+- memory-bound,
+- lock-contention.
+
+Every run is environment-labelled, dual-libc reproducible, and aggregated into
+both an interactive Plotly HTML dashboard at `report/index.html` (or
+[here](https://marccarre.github.io/rust-benchmark-glibc-musl-mimalloc/)) and a
+Markdown report (`report/REPORT.md`) with Mermaid.js architecture diagrams.
+
+The GitHub Actions matrix runs on `ubuntu-24.04` with three seeds per cell to
+capture the *shape* of the curve (relative ordering across allocators), while
+the local `just bench-all` recipe is the canonical *statistical-quality*
+measurement (longer warmup + duration + more samples).
+
+Results carry both:
+
+- `⚠ suspect` (low samples / short warmup), and
+- `⚠ high variance` (CV > 10%)
+
+flags so the reader always knows how much weight to put on a given number.
 
 ## How memory allocation works on Linux
 
