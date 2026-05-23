@@ -115,11 +115,16 @@ build env alloc:
 # (D-15). Pre-creates ./results with 0777 perms so distroless `:nonroot`
 # (UID 65532) can write the per-cell JSON (RESEARCH §Pitfall 4).
 #
+# Warmup/duration default to the canonical local-bench shape
+# (`--warmup 5s --duration 60s`); `bench-all-smoke` and `ci-bench-cell`
+# override with the smoke shape (`1s` / `5s`). This is now the SINGLE
+# wiring point for warmup/duration in local Docker runs.
+#
 # Override knobs (D-17):
 #   BENCH_CPUS=8 just run alpine jemalloc          # default 4
 #   BENCH_MEMORY=8g just run debian-slim ptmalloc  # default 4g
 #   BENCH_CPUSET=4-7 just run wolfi mimalloc       # default 0-3
-run env alloc:
+run env alloc warmup="5s" duration="60s":
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p results
@@ -132,12 +137,13 @@ run env alloc:
         --cpus="${BENCH_CPUS}" --memory="${BENCH_MEMORY}" --cpuset-cpus="${BENCH_CPUSET}" \
         -v "$(pwd)/results:/out" \
         alloc-bench:{{alloc}}-{{env}} \
-        run-all --output /out/{{alloc}}-{{env}}.json --seed 7
+        run-all --output /out/{{alloc}}-{{env}}.json --seed 7 --warmup {{warmup}} --duration {{duration}}
 
-# Build + run one cell sequentially.
-bench-cell env alloc:
+# Build + run one cell sequentially. Forwards warmup/duration to `run`
+# (defaults match the canonical local-bench shape: 5s warmup, 60s measure).
+bench-cell env alloc warmup="5s" duration="60s":
     just build {{env}} {{alloc}}
-    just run {{env}} {{alloc}}
+    just run {{env}} {{alloc}} {{warmup}} {{duration}}
 
 # Build every image in the matrix (18 docker cells + the host cargo binary)
 # without running any benchmarks. Mirrors `bench-all`'s sequential per-cell
@@ -284,7 +290,7 @@ scratch mimalloc
 # Sequential is mandatory: parallel cells would multiplex allocators in the
 # same kernel page cache + thermal envelope, polluting measurements
 # (PITFALLS §1.3 spirit).
-bench-all:
+bench-all warmup="5s" duration="60s":
     #!/usr/bin/env bash
     set -uo pipefail   # NOT -e — we want to continue past per-cell failures.
     declare -a results=()
@@ -294,9 +300,9 @@ bench-all:
         alloc="${line##* }"
         echo
         echo "════════════════════════════════════════════════════════"
-        echo "[${alloc}-${env}] starting"
+        echo "[${alloc}-${env}] starting (warmup={{warmup}}, duration={{duration}})"
         echo "════════════════════════════════════════════════════════"
-        if just bench-cell "$env" "$alloc" 2>&1 | sed "s/^/[${alloc}-${env}] /"; then
+        if just bench-cell "$env" "$alloc" "{{warmup}}" "{{duration}}" 2>&1 | sed "s/^/[${alloc}-${env}] /"; then
             results+=("OK   ${alloc}-${env}")
         else
             results+=("FAIL ${alloc}-${env}")
@@ -326,16 +332,15 @@ bench-all:
         fi
     done <<< '{{_matrix_cells}}'
 
-# Smoke variant — same loop, same per-cell defaults. Phase-2 run-all already
-# defaults to warmup=1s + duration=5s per scenario (see
-# crates/alloc-bench-cli/src/run.rs default_scenarios), so this recipe's
-# contract is "the matrix runs end-to-end fast enough to iterate." BENCH_SMOKE
-# is reserved for future per-scenario flag overrides; today it has no effect
-# beyond signalling intent in shell history. (D-13 — see SUMMARY for rationale.)
+# Smoke variant — same loop, smoke-shape flags. Forwards `1s` warmup and
+# `5s` duration into `bench-all`'s parameterized shape. Per CLAUDE.md
+# "CI smoke vs local full" convention: smoke proves *relative ordering*
+# (matrix runs end-to-end in ~60min p95), while `just bench-all` (5s/60s
+# defaults) proves *absolute throughput* (~2.5h, statistical-quality).
 bench-all-smoke:
     #!/usr/bin/env bash
     set -uo pipefail
-    BENCH_SMOKE=1 just bench-all
+    just bench-all 1s 5s
 
 # Convenience recipe for Apple Silicon hosts — sets BENCH_TARGET_CPU=x86-64-v2 to
 # avoid the Rosetta+v3 SIGSEGV (UAT Phase 5.1 Gap 1; see README §Troubleshooting).
@@ -476,13 +481,16 @@ ci-bench-cell env alloc:
          image_size_mb:    $m,
          captured_at:      now | todate
        }' > meta/{{alloc}}-{{env}}.json
+    # Smoke shape (warmup 1s + duration 5s) — CI proves *relative
+    # ordering*; local proves *absolute throughput* (CLAUDE.md "CI smoke
+    # vs local full" convention).
     for seed in 1 2 3; do
       docker run --rm \
         --platform linux/amd64 \
         --cpus=4 --memory=4g --cpuset-cpus=0-3 \
         -v "$(pwd)/results:/out" \
         alloc-bench:{{alloc}}-{{env}} \
-        run-all --output /out/{{alloc}}-{{env}}-seed${seed}.json --seed ${seed}
+        run-all --output /out/{{alloc}}-{{env}}-seed${seed}.json --seed ${seed} --warmup 1s --duration 5s
     done
 
 # CI sanity gate — fmt + clippy + dce-check on a clean tree. Mirrors the

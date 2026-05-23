@@ -198,14 +198,18 @@ enum Cmd {
         #[arg(long)]
         output: Option<String>,
     },
-    /// Run all 10 scenarios sequentially (warmup=1s + duration=5s each by
-    /// default) and emit a single JSON array of Run records — one per
-    /// scenario. Per-scenario panics are caught and recorded with
-    /// `status: "failed"` so the other scenarios still produce records.
+    /// Run all 10 scenarios sequentially under the configured warmup/duration
+    /// and emit a single JSON array of Run records — one per scenario.
+    /// Per-scenario panics are caught and recorded with `status: "failed"`
+    /// so the other scenarios still produce records.
     RunAll {
         /// Optional output path. If absent, writes the JSON array to stdout.
         #[arg(long)]
         output: Option<String>,
+        #[arg(long, default_value = "5s")]
+        warmup: String,
+        #[arg(long, default_value = "60s")]
+        duration: String,
         #[arg(long, default_value_t = 0xDEADBEEF)]
         seed: u64,
     },
@@ -443,9 +447,14 @@ fn main() -> Result<()> {
                 output.as_deref(),
             )
         }
-        Some(Cmd::RunAll { output, seed }) => {
+        Some(Cmd::RunAll {
+            output,
+            warmup,
+            duration,
+            seed,
+        }) => {
             print_version_banner();
-            run::run_all(output.as_deref(), seed)
+            run::run_all(output.as_deref(), seed, &warmup, &duration)
         }
     }
 }
