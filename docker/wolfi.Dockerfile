@@ -12,8 +12,8 @@
 # if rebuilding and the wolfi runtime stops linking — but never use the floating
 # tag (Plan 04's `dive --ci` relies on bit-identical bases across runs).
 
-# RUST_VERSION matches rust-toolchain.toml (channel = "1.91"). See debian-slim.Dockerfile.
-ARG RUST_VERSION=1.91
+# RUST_VERSION matches rust-toolchain.toml (channel = "1.95"). See debian-slim.Dockerfile.
+ARG RUST_VERSION=1.95
 
 # ─── Stage 1: chef base ────────────────────────────────────────────
 FROM rust:${RUST_VERSION}-bookworm AS chef

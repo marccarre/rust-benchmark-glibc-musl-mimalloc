@@ -103,7 +103,7 @@ build env alloc:
         -f docker/{{env}}.Dockerfile \
         --build-arg ALLOC={{alloc}} \
         --build-arg TARGET="$TARGET" \
-        --build-arg RUST_VERSION=1.91 \
+        --build-arg RUST_VERSION=1.95 \
         --build-arg RUSTFLAGS_OVERRIDE="$RUSTFLAGS_OVERRIDE" \
         --build-arg OCI_VERSION="$OCI_VERSION" \
         --build-arg OCI_REVISION="$OCI_REVISION" \

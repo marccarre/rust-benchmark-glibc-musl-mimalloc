@@ -14,7 +14,7 @@
 # We deliberately DO NOT add a USER directive — scratch has no
 # /etc/passwd; the binary runs as root by default which is fine for a
 # benchmark.
-ARG RUST_VERSION=1.91
+ARG RUST_VERSION=1.95
 
 # ─── Stage 1: chef base ────────────────────────────────────────────
 FROM rust:${RUST_VERSION}-alpine AS chef
@@ -22,7 +22,7 @@ FROM rust:${RUST_VERSION}-alpine AS chef
 # make + g++ + cmake + linux-headers + bash + file: required by tikv-jemalloc-sys
 # 0.6.1 (autoconf/configure → make pipeline) and libmimalloc-sys 0.1.47 (cmake)
 # native build scripts. Plan 03-04 Task 1 deviation Rule 3 (blocking issue):
-# rust:1.91-alpine ships gcc but not make/cmake; adding them is a build-time
+# rust:1.95-alpine ships gcc but not make/cmake; adding them is a build-time
 # requirement only — scratch runtime stage carries nothing.
 RUN apk add --no-cache musl-dev pkgconfig make g++ cmake linux-headers bash file
 RUN cargo install --locked cargo-chef@0.1.77

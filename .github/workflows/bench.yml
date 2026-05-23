@@ -38,7 +38,7 @@
 #   §Pattern 4 — meta.json sidecar shape (lives in `just ci-bench-cell`).
 #   §Pattern 6 — concurrency boolean expression on cancel-in-progress.
 #   §Pitfall 3 — explicit timeout-minutes guards (15 / 30 / 15).
-#   §Pitfall 5 — rustc pin is 1.91 (NOT 1.83); matches rust-toolchain.toml,
+#   §Pitfall 5 — rustc pin is 1.95 (NOT 1.83); matches rust-toolchain.toml,
 #                all six docker/*.Dockerfile, and justfile:79.
 #
 # A CI status badge for this workflow will be added to README.md by Plan
@@ -85,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt, clippy
 
@@ -172,7 +172,7 @@ jobs:
           build-args: |
             ALLOC=${{ matrix.alloc }}
             TARGET=${{ matrix.target }}
-            RUST_VERSION=1.91
+            RUST_VERSION=1.95
             OCI_REVISION=${{ github.sha }}
             OCI_VERSION=${{ github.ref_name }}
             OCI_CREATED=${{ github.event.head_commit.timestamp || github.run_started_at }}
@@ -221,7 +221,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: dtolnay/rust-toolchain@1.95.0
 
       - uses: Swatinem/rust-cache@v2
         with:
