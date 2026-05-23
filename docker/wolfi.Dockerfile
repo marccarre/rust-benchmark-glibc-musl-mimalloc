@@ -3,9 +3,9 @@
 # Pattern: cargo-chef 3-stage (chef → planner → builder) + per-env runtime.
 # Source: 03-RESEARCH.md §"Pattern 1" + §"Pitfall 6 — wolfi-base mutable-tag mutability".
 #
-# Wolfi-base manifest-list (OCI image-index) digest captured 2026-05-19 via:
+# Wolfi-base manifest-list (OCI image-index) digest captured 2026-05-23 via:
 #   docker buildx imagetools inspect cgr.dev/chainguard/wolfi-base@<floating tag> | grep '^Digest:'
-# → sha256:0cff4df29a6597173dc8b813787318150141eb96ac783dc3ff4f5ff52c49a1e2
+# → sha256:5743937d521cbeb9e8c73bf1bd7ba2589c178940eb03d7b148efecc962be8587
 # We pin the manifest-list digest (not the per-arch amd64 manifest) so `--platform
 # linux/amd64` resolves cleanly at build time without tripping `--check` on arm64
 # hosts (Apple Silicon / OrbStack). Per RESEARCH §Pitfall 6: refresh this digest
@@ -65,7 +65,7 @@ RUN if [ "$ALLOC" = "jemalloc" ]; then \
 
 # ─── Stage 4: runtime — wolfi-base (glibc, digest-pinned) ──────────
 # wolfi-base runs as UID 0 by default per RESEARCH §"Standard Stack" — no USER.
-FROM cgr.dev/chainguard/wolfi-base@sha256:0cff4df29a6597173dc8b813787318150141eb96ac783dc3ff4f5ff52c49a1e2 AS runtime
+FROM cgr.dev/chainguard/wolfi-base@sha256:5743937d521cbeb9e8c73bf1bd7ba2589c178940eb03d7b148efecc962be8587 AS runtime
 ARG OCI_VERSION
 ARG OCI_REVISION
 ARG OCI_CREATED
@@ -77,6 +77,6 @@ LABEL org.opencontainers.image.title="alloc-bench" \
       org.opencontainers.image.licenses="MIT OR Apache-2.0" \
       org.opencontainers.image.created="${OCI_CREATED}" \
       org.opencontainers.image.authors="Marc Carré"
-ENV DOCKER_IMAGE=cgr.dev/chainguard/wolfi-base@sha256:0cff4df29a6597173dc8b813787318150141eb96ac783dc3ff4f5ff52c49a1e2
+ENV DOCKER_IMAGE=cgr.dev/chainguard/wolfi-base@sha256:5743937d521cbeb9e8c73bf1bd7ba2589c178940eb03d7b148efecc962be8587
 COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/alloc-bench-cli /usr/local/bin/alloc-bench-cli
 ENTRYPOINT ["/usr/local/bin/alloc-bench-cli"]

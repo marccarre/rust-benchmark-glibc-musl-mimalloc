@@ -62,8 +62,8 @@ RUN if [ "$ALLOC" = "jemalloc" ]; then \
     cargo build --release --target ${TARGET} ${FEATURES} \
         -p alloc-bench-cli
 
-# ─── Stage 4: runtime — alpine:3.20 (matches success criterion 2 literal) ──
-FROM alpine:3.20 AS runtime
+# ─── Stage 4: runtime — alpine:3.23 (matches success criterion 2 literal) ──
+FROM alpine:3.23 AS runtime
 ARG OCI_VERSION
 ARG OCI_REVISION
 ARG OCI_CREATED
@@ -75,6 +75,6 @@ LABEL org.opencontainers.image.title="alloc-bench" \
       org.opencontainers.image.licenses="MIT OR Apache-2.0" \
       org.opencontainers.image.created="${OCI_CREATED}" \
       org.opencontainers.image.authors="Marc Carré"
-ENV DOCKER_IMAGE=alpine:3.20
+ENV DOCKER_IMAGE=alpine:3.23
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/alloc-bench-cli /usr/local/bin/alloc-bench-cli
 ENTRYPOINT ["/usr/local/bin/alloc-bench-cli"]
