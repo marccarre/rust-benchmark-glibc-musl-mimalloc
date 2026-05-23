@@ -23,7 +23,7 @@ When a Rust program calls `Vec::new()` or `Box::new(x)`, the request travels thr
 
 ## Run it yourself
 
-The full reproduction loop is five steps. Pick the **smoke run** to verify the pipeline end-to-end in ~10 minutes, or the **full run** for canonical statistical-quality numbers (~2.5 hours, ~5 GB disk).
+The full reproduction loop is five steps (plus an optional sixth — publish to GitHub Pages). Pick the **smoke run** to verify the pipeline end-to-end in ~10 minutes, or the **full run** for canonical statistical-quality numbers (~2.5 hours, ~5 GB disk).
 
 1. **Install Docker Desktop and just.**
    - macOS: `brew install --cask docker` (or `brew install colima` for a lighter daemon) and `brew install just`.
@@ -48,6 +48,8 @@ The full reproduction loop is five steps. Pick the **smoke run** to verify the p
    - Linux: `xdg-open report/index.html`
 
    The HTML dashboard is fully self-contained (Plotly bundled, no external JS or server required) — open it from a web browser, an `scp`'d laptop, or behind an air-gap.
+
+6. **Publish the dashboard to GitHub Pages (optional).** Once you have confirmed the local dashboard looks correct, run `just publish-pages` to push `report/index.html` to the `gh-pages` branch. The site is then served at `https://marccarre.github.io/rust-benchmark-glibc-musl-mimalloc/`.
 
 ### Troubleshooting
 
