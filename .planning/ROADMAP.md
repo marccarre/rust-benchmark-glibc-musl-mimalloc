@@ -19,7 +19,7 @@ Phase numbering continues from v1.0 (last phase = 5; surgical patch = 5.1) → v
 
 ## v1.1 Phase Details
 
-### Phase 6: Foundations
+### Phase 6: Foundations ✅
 
 **Goal:** Land the leaf additions that every downstream phase consumes — the `MEASUREMENT_AXES` registry, the security sidecar plumbing, and the frozen-schema CI gate that prevents accidental v1 schema mutation. No consumers downstream until Phase 7+ exist; landing them together gives Phase 7 a complete fixture set to test against.
 **Depends on:** Nothing (first v1.1 phase; v1.0 + 5.1 already shipped)
@@ -35,12 +35,12 @@ Phase numbering continues from v1.0 (last phase = 5; surgical patch = 5.1) → v
 Plans:
 **Wave 1**
 
-- [ ] 06-01-PLAN.md — `axes.rs` registry + Direction enum + arrow() helper (AXES-01, AXES-02)
-- [ ] 06-03-PLAN.md — Frozen-schema gate (`smoke::tests::v1_schema_output_rs_is_frozen` + `sha2` dev-dep) (GUARD-01)
+- [x] 06-01-PLAN.md — `axes.rs` registry + Direction enum + arrow() helper (AXES-01, AXES-02)
+- [x] 06-03-PLAN.md — Frozen-schema gate (`smoke::tests::v1_schema_output_rs_is_frozen` + `sha2` dev-dep) (GUARD-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06-02-PLAN.md — Security loader (`SecurityMeta` + `load_security_metas`) + `--security` CLI flag + 6 committed sidecars (SEC-01, SEC-02, SEC-03)
+- [x] 06-02-PLAN.md — Security loader (`SecurityMeta` + `load_security_metas`) + `--security` CLI flag + 6 committed sidecars (SEC-01, SEC-02, SEC-03)
 
 **Open Questions** (defer to `/gsd:plan-phase 6`):
 
