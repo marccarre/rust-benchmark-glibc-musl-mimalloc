@@ -22,6 +22,7 @@
 //!     sorts + parses each file; per-file failures log a `warn:` line on
 //!     stderr and skip-and-continue (matches `discover` behavior).
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -67,6 +68,26 @@ pub struct CellMeta {
     pub captured_at: Option<String>,
 }
 
+/// Per-environment security posture sidecar (Phase 6 / SEC-01). Hand-curated
+/// content — six files in `meta/security/{env}.json`. v1.1 ships the 4-field
+/// locked shape; additional fields (e.g. `cve_count`) deferred to v1.2.
+///
+/// Loader does NOT validate the score range at parse time; downstream
+/// Phase-7 `score::compute_axes` clamps via min-max normalization.
+#[derive(Debug, Deserialize)]
+pub struct SecurityMeta {
+    pub env: String,
+    /// Score 0..=100 — higher is better posture. Loader does NOT validate
+    /// the range at parse time; downstream Phase-7 `score::compute_axes`
+    /// clamps via min-max normalization.
+    #[allow(dead_code)] // Reserved for Phase 7 (score::compute_axes consumer).
+    pub score: u8,
+    #[allow(dead_code)] // Reserved for Phase 7 (rendered as tooltip text).
+    pub rationale: String,
+    #[allow(dead_code)] // Reserved for Phase 7 (provenance; not rendered today).
+    pub captured_at: String,
+}
+
 /// Load per-cell meta sidecars by globbing `pattern`. Empty pattern →
 /// empty map (no error). Per-file parse failures log to stderr and are
 /// skipped (matches `discover`'s skip-and-continue contract).
@@ -104,6 +125,51 @@ fn load_one_meta(path: &Path) -> Result<CellMeta> {
     let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let meta: CellMeta = serde_json::from_slice(&bytes)
         .with_context(|| format!("parsing meta {}", path.display()))?;
+    Ok(meta)
+}
+
+/// Load per-env security posture sidecars by globbing `pattern`. Empty
+/// pattern → empty map (no error). Per-file parse failures log to stderr
+/// and are skipped (matches `discover`'s and `load_cell_metas`'s
+/// skip-and-continue contract).
+///
+/// The map is keyed by `env` (single String) — security posture is per-env,
+/// not per-cell. Returns a `BTreeMap` (NOT `HashMap`, unlike `load_cell_metas`)
+/// because the byte-identical-output discipline (CLAUDE.md Conventions)
+/// requires alphabetical iteration order. SEC-02 explicitly mandates this.
+///
+/// Note: `load_cell_metas` uses `HashMap` — that is a Phase-5 D-13 precedent
+/// that pre-dates the byte-identical-iteration discipline; the asymmetry is
+/// intentional. Don't unify in this phase (would risk TEST-01 byte-identical
+/// goldens).
+pub fn load_security_metas(pattern: &str) -> Result<BTreeMap<String, SecurityMeta>> {
+    if pattern.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let mut paths: Vec<PathBuf> = glob(pattern)
+        .with_context(|| format!("invalid security meta glob pattern: {pattern}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+    paths.sort_unstable();
+
+    let mut map: BTreeMap<String, SecurityMeta> = BTreeMap::new();
+    for path in paths {
+        match load_one_security_meta(&path) {
+            Ok(meta) => {
+                map.insert(meta.env.clone(), meta);
+            }
+            Err(e) => {
+                eprintln!("warn: skipped security meta {}: {}", path.display(), e);
+            }
+        }
+    }
+    Ok(map)
+}
+
+fn load_one_security_meta(path: &Path) -> Result<SecurityMeta> {
+    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let meta: SecurityMeta = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parsing security meta {}", path.display()))?;
     Ok(meta)
 }
 
@@ -418,6 +484,77 @@ mod tests {
                 .unwrap_or(false),
             "skipped path should end with bad.json, got {:?}",
             outcome.skipped[0].path
+        );
+    }
+
+    /// SEC-02 / SEC-03: empty pattern → empty `BTreeMap`, `Ok` result, no
+    /// filesystem touch. Mirrors `load_cell_metas_empty_pattern_returns_empty_map`
+    /// (Phase-5 D-13 precedent) so the default `--security` value (empty
+    /// string) keeps existing local `just aggregate` invocations working.
+    #[test]
+    fn load_security_metas_empty_pattern_returns_empty_map() {
+        let metas = load_security_metas("").expect("empty pattern is OK");
+        assert!(metas.is_empty(), "empty pattern must yield empty map");
+        assert_eq!(metas.len(), 0, "empty pattern must yield length-0 map");
+    }
+
+    /// SEC-02 / TEST-03 verbatim: the loader returns a `BTreeMap` (NOT
+    /// `HashMap`) so iteration order is alphabetical by env key. CLAUDE.md
+    /// byte-identical-output discipline requires this for downstream
+    /// rendering. Seed three sidecars in non-alphabetical write order
+    /// (wolfi, alpine, scratch) and assert `.keys()` iterates as
+    /// `["alpine", "scratch", "wolfi"]`.
+    #[test]
+    fn load_security_metas_returns_btreemap_sorted_by_env() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Write in non-alphabetical order so any HashMap-or-insertion-order
+        // implementation would surface here.
+        std::fs::write(
+            dir.path().join("wolfi.json"),
+            r#"{"env":"wolfi","score":75,"rationale":"r","captured_at":"2026-05-26"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("alpine.json"),
+            r#"{"env":"alpine","score":60,"rationale":"r","captured_at":"2026-05-26"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("scratch.json"),
+            r#"{"env":"scratch","score":95,"rationale":"r","captured_at":"2026-05-26"}"#,
+        )
+        .unwrap();
+
+        let pattern = format!("{}/*.json", dir.path().display());
+        let metas = load_security_metas(&pattern).expect("load_security_metas");
+        let keys: Vec<&str> = metas.keys().map(|s| s.as_str()).collect();
+        assert_eq!(
+            keys,
+            vec!["alpine", "scratch", "wolfi"],
+            "BTreeMap must iterate alphabetically by env key"
+        );
+    }
+
+    /// SEC-02: D-08-style skip-and-continue for security sidecars. One
+    /// valid + one malformed JSON in the same glob: loader logs the
+    /// malformed file to stderr and returns Ok with the valid sidecar
+    /// only. The malformed sidecar's env is NOT inserted into the map.
+    #[test]
+    fn load_security_metas_skips_malformed_json() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("good.json"),
+            r#"{"env":"alpine","score":60,"rationale":"r","captured_at":"2026-05-26"}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("bad.json"), "not-json: garbage").unwrap();
+
+        let pattern = format!("{}/*.json", dir.path().display());
+        let metas = load_security_metas(&pattern).expect("load_security_metas Ok");
+        assert_eq!(metas.len(), 1, "expected exactly one valid sidecar");
+        assert!(
+            metas.contains_key("alpine"),
+            "the valid sidecar's env (alpine) must be present"
         );
     }
 }
