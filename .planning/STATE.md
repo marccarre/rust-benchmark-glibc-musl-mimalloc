@@ -1,15 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: MVP
-status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-23T19:30:00.000Z"
-last_activity: 2026-05-24 -- Completed quick task 260524-5nc: Fix bench-all warmup/duration wiring + lower suspect-samples threshold
+milestone: v1.1
+milestone_name: Recommendations, Spider Charts & Direction Markers
+status: planning
+last_updated: "2026-05-26T00:07:41.100Z"
+last_activity: 2026-05-26
 progress:
-  total_phases: 1
+  total_phases: 0
   completed_phases: 0
-  total_plans: 2
+  total_plans: 0
   completed_plans: 0
   percent: 0
 ---
@@ -21,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-17)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** Phase 05.1 — uat-gap-closure
+**Current focus:** v1.1 — Recommendations, Spider Charts & Direction Markers (defining requirements)
 
 ## Current Position
 
-Phase: 05.1 (uat-gap-closure) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 05.1
-Last activity: 2026-05-24 -- Completed quick task 260524-5nc: Fix bench-all warmup/duration wiring + lower suspect-samples threshold
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-26 — Milestone v1.1 started
 
 ## Performance Metrics
 
@@ -105,4 +104,4 @@ Resume file: .planning/phases/01-foundation-mvp-slice/01-CONTEXT.md
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Define REQUIREMENTS.md and ROADMAP.md for v1.1 (in progress via /gsd-new-milestone)
