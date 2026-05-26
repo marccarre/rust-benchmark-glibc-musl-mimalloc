@@ -1,0 +1,6 @@
+{
+  "env": "distroless-cc",
+  "score": 80,
+  "rationale": "Google distroless cc base — adds glibc + libgcc + libstdc++ for dynamically linked C/C++ binaries. Slightly larger CVE surface than distroless-static due to glibc inclusion; still no shell or package manager.",
+  "captured_at": "2026-05-26"
+}

@@ -1,0 +1,6 @@
+{
+  "env": "wolfi",
+  "score": 75,
+  "rationale": "Chainguard Wolfi — distroless-style minimalism with daily-rebuild fresh packages. Designed for low CVE drift. Includes apk-tools and a minimal package set; larger surface than scratch/distroless but actively patched.",
+  "captured_at": "2026-05-26"
+}

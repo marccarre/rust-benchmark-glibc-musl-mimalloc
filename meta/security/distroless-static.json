@@ -1,0 +1,6 @@
+{
+  "env": "distroless-static",
+  "score": 90,
+  "rationale": "Google distroless static base — ~2 MiB; only CA certs, /etc/passwd, tzdata. No shell, no package manager. Smaller surface than distroless-cc but requires statically linked binaries.",
+  "captured_at": "2026-05-26"
+}

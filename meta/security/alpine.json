@@ -1,0 +1,6 @@
+{
+  "env": "alpine",
+  "score": 60,
+  "rationale": "Alpine Linux 3.x — small (~5 MiB) musl-based distro with apk package manager and busybox shell. Active CVE patching but larger attack surface than distroless: shell, BusyBox utilities, and full package manager are all present.",
+  "captured_at": "2026-05-26"
+}

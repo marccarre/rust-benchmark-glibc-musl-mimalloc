@@ -1,0 +1,6 @@
+{
+  "env": "scratch",
+  "score": 95,
+  "rationale": "Empty base image — zero packages, zero shell, zero CVE surface beyond the static binary itself. Highest theoretical posture but trades off observability and debugging.",
+  "captured_at": "2026-05-26"
+}

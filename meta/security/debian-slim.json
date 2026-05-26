@@ -1,0 +1,6 @@
+{
+  "env": "debian-slim",
+  "score": 45,
+  "rationale": "Debian slim — full glibc, dpkg, apt, bash. ~30 MiB. Largest attack surface in the matrix: full package manager, shell, and standard Unix utilities. Mature CVE tracking but slowest-moving security-update cadence among the six.",
+  "captured_at": "2026-05-26"
+}
