@@ -37,12 +37,76 @@ pub struct CellScore {
     pub axes: BTreeMap<&'static str, f64>,
 }
 
-/// p10/p90 winsorize → direction-aware min-max → 0..=100.
+/// p10/p90 winsorize → direction-aware min-max → 0..=100. Empty input →
+/// empty `Vec`; single value → `vec![50.0]`; all-equal (after winsorization)
+/// → `vec![50.0; n]`. Non-finite inputs (NaN, infinity) are replaced with
+/// `0.0` per slot before winsorization, mirroring `multi_run::aggregate`'s
+/// `is_finite` guard convention.
 ///
-/// RED stub: returns an empty `Vec` regardless of input. The Task 1 GREEN
-/// commit replaces this with the real algorithm.
-pub fn normalize_axis(_values: &[f64], _direction: Direction) -> Vec<f64> {
-    Vec::new()
+/// RESEARCH §1 dry-run on the v1.0 production fixtures verified that all 8
+/// axes produce ≥6 distinct scores at N=18 (channel=16, cpu=15,
+/// image_size=6, memory=16, multithread=15, resilience=15, security=6,
+/// web=16) — well above the ≥5 distinct-scores threshold. No
+/// `TODO(V12-04)` marker is needed; per-axis fixed-clamp fallback remains
+/// a v1.2 candidate only IF future runs show compression.
+///
+/// Algorithm (locked):
+/// 1. Replace any non-finite element with `0.0`.
+/// 2. Empty input → return `Vec::new()`.
+/// 3. Single-value input → return `vec![50.0]` (deterministic mid-range).
+/// 4. Sort copy ascending; compute `p10 = sorted[floor(0.10 * n)]` and
+///    `p90 = sorted[floor(0.90 * n).min(n-1)]`. Clamp each input to
+///    `[p10, p90]`.
+/// 5. If `(p90 - p10).abs() <= 1e-12`: all-equal path → return
+///    `vec![50.0; n]` (avoid div-by-zero).
+/// 6. `score = (clamped - p10) / (p90 - p10) * 100.0`.
+/// 7. `Direction::Lower` → `score = 100.0 - score`.
+/// 8. Hard clamp to `[0.0, 100.0]`.
+pub fn normalize_axis(values: &[f64], direction: Direction) -> Vec<f64> {
+    let n = values.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    if n == 1 {
+        return vec![50.0];
+    }
+
+    // Step 1: replace non-finite slots with 0.0 (mirrors multi_run.rs:67).
+    let cleaned: Vec<f64> = values
+        .iter()
+        .map(|x| if x.is_finite() { *x } else { 0.0 })
+        .collect();
+
+    // Step 4: sort + p10/p90 indices.
+    let mut sorted: Vec<f64> = cleaned.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let lo_idx = ((n as f64) * 0.10).floor() as usize;
+    let hi_idx = (((n as f64) * 0.90).floor() as usize).min(n - 1);
+    let p10 = sorted[lo_idx];
+    let p90 = sorted[hi_idx];
+
+    // Step 5: degenerate-range guard (avoids div-by-zero on all-equal /
+    // near-equal inputs).
+    let span = p90 - p10;
+    if span.abs() <= 1e-12 {
+        return vec![50.0; n];
+    }
+
+    cleaned
+        .into_iter()
+        .map(|v| {
+            // Step 6: winsorize to [p10, p90] then min-max.
+            let clamped = v.max(p10).min(p90);
+            let raw = (clamped - p10) / span * 100.0;
+            // Step 7: direction inversion.
+            let directed = match direction {
+                Direction::Higher => raw,
+                Direction::Lower => 100.0 - raw,
+            };
+            // Step 8: hard clamp to [0.0, 100.0].
+            directed.max(0.0).min(100.0)
+        })
+        .collect()
 }
 
 #[cfg(test)]
