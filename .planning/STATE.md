@@ -20,14 +20,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-17)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** v1.1 — Recommendations, Spider Charts & Direction Markers (defining requirements)
+**Current focus:** v1.1 — Recommendations, Spider Charts & Direction Markers (roadmap defined; Phase 6 ready for `/gsd:plan-phase 6`)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 6 (Foundations) — not yet planned
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-26 — Milestone v1.1 started
+Status: Roadmap defined; awaiting `/gsd:plan-phase 6`
+Last activity: 2026-05-26 — v1.1 ROADMAP.md written (6 phases, 32/32 requirements mapped)
+
+**v1.1 phase queue (strictly serial):**
+
+1. Phase 6: Foundations — axes registry + security sidecars + frozen-schema guard (6 reqs)
+2. Phase 7: Scoring & Top-N — normalization + composite + recommendation struct + scoring guards (9 reqs)
+3. Phase 8: Per-cell Artifacts — Markdown + HTML cards via two templates (5 reqs)
+4. Phase 9: Spider Chart — `polar.rs` + chart wiring + Pareto overlay (5 reqs)
+5. Phase 10: Direction Markers — column headers + axis labels + legend + a11y (5 reqs)
+6. Phase 11: Golden-fixture Regen — standalone PR; byte-identical pinning (2 reqs)
+
+Build-order constraint: Phase 6 blocks 7+9+10; Phase 7 blocks 8+9; Phase 10 blocks 11.
 
 ## Performance Metrics
 
@@ -65,6 +76,9 @@ Recent decisions affecting current work:
 - Init: axum + serde_json + tokio chosen as the canonical web bench.
 - Init: Plotly HTML dashboard (results inlined) — no Python or server dependency.
 - Init: Coarse granularity → 5 MVP-shaped phases preserved from research SUMMARY.md.
+- v1.1: Decorate-not-rewrite preserved — `crates/alloc-bench-core/src/output.rs` v1 schema is NOT modified; new data rides on sidecars (`meta/security/{env}.json`) or is computed in `alloc-bench-aggregator` from existing v1 fields.
+- v1.1: p10/p90 winsorization (not p5/p95) — at N=18, `floor(0.05 × 18) = 0` collapses to raw min/max; `floor(0.1 × 18) = 1` clips one cell per tail.
+- v1.1: Equal weights across 8 axes (1/8 per axis) per milestone spec; heuristic-axis weight cap deferred to v1.2.
 
 ### Pending Todos
 
@@ -98,10 +112,10 @@ Items acknowledged and deferred at milestone close on 2026-05-19:
 
 ## Session Continuity
 
-Last session: 2026-05-16T20:49:14.127Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-foundation-mvp-slice/01-CONTEXT.md
+Last session: 2026-05-26T00:07:41.100Z
+Stopped at: v1.1 ROADMAP.md written; ready for Phase 6 planning
+Resume file: .planning/ROADMAP.md (v1.1 Phases section) — next is `/gsd:plan-phase 6`
 
 ## Operator Next Steps
 
-- Define REQUIREMENTS.md and ROADMAP.md for v1.1 (in progress via /gsd-new-milestone)
+- Run `/gsd:plan-phase 6` to decompose Foundations (axes registry + security sidecars + frozen-schema guard) into executable plans.
