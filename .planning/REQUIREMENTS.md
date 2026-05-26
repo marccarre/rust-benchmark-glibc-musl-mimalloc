@@ -1,0 +1,147 @@
+# Requirements: rust-benchmark-glibc-musl-mimalloc
+
+**Defined:** 2026-05-26 (milestone v1.1)
+**Core Value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
+
+## v1.1 Requirements
+
+Requirements for milestone v1.1 (Recommendations, Spider Charts & Direction Markers). Continues numbering from v1.0 (Phase 5 ended at REPR-03). Each maps to exactly one v1.1 phase.
+
+### Foundations
+
+- [ ] **AXES-01**: User reads `axes.rs` and finds a single `MEASUREMENT_AXES: [AxisSpec; 8]` const registry covering channel throughput, memory/fragmentation, web, multithread, cpu-bound, resilience, image-size efficiency (heuristic), security posture (heuristic) — alphabetically keyed, consumed by `score.rs`, `polar.rs`, and `markdown.rs` table-header builders
+- [ ] **AXES-02**: User reads `axes.rs` and finds a `Direction::{Higher, Lower}` enum plus an `arrow()` helper returning `\u{2191}` (↑) for `Higher` and `\u{2193}` (↓) for `Lower` — single source of truth for direction-marker glyphs
+- [ ] **SEC-01**: User runs `just aggregate --security 'meta/security/*.json'` and the aggregator loads six hand-curated `meta/security/{env}.json` sidecars (alpine, debian-slim, distroless-cc, distroless-static, scratch, wolfi) — each with shape `{ env: String, score: u8 (0..=100), rationale: String, captured_at: String }`
+- [ ] **SEC-02**: User reads `loader.rs` and finds `SecurityMeta` struct + `load_security_metas()` returning `BTreeMap<String, SecurityMeta>` (NOT `HashMap` — byte-identical-output discipline) mirroring the existing `load_cell_metas` plumbing
+- [ ] **SEC-03**: User runs `just aggregate` without `--security` and the aggregator falls back to `score = 0` with em-dash tooltip in the security axis (mirrors v1.0 docker_runtimes em-dash convention; preserves byte-identical output and stable 8-axis spider shape)
+- [ ] **GUARD-01**: User runs `cargo test` and the test `smoke::tests::v1_schema_output_rs_is_frozen` pins a SHA-256 of `crates/alloc-bench-core/src/output.rs` to its v1.0 freeze — guards against accidental v1 schema mutation (CLAUDE.md Conventions: Aggregator decorate-not-rewrite)
+
+### Scoring & Top-N
+
+- [ ] **SCORE-01**: User reads `score.rs` and finds `normalize_axis(values: &[f64], direction: Direction) -> Vec<f64>` mapping each input to `[0.0, 100.0]` with direction-aware inversion — `Higher` keeps order, `Lower` inverts
+- [ ] **SCORE-02**: User reads `score.rs` and finds **p10/p90 winsorization** applied before min-max normalization (chosen over p5/p95 because `floor(0.05 × 18) = 0` collapses to raw min/max at N=18; `floor(0.1 × 18) = 1` clips one cell per tail) — guarded by `score::tests::normalize_axis_p10_p90_clips_one_outlier_each_tail_at_n18`
+- [ ] **SCORE-03**: User reads `score.rs` and finds `compute_axes(runs, metas, security_metas) -> Vec<CellAxes>` and `score_cells(...) -> Vec<CellScore>` — composite weighted-sum score using equal weights (1/8 per axis, per milestone spec); summation traverses `MEASUREMENT_AXES` constant order (NOT collected into a `Vec` — single-ULP drift from non-deterministic order corrupts ties)
+- [ ] **SCORE-04**: User reads `score.rs` and finds `top_n(scores, n) -> Vec<CellScore>` returning the top-N cells with **alphabetical `(alloc, env)` tiebreak** for any cells that tie on composite score — guarded by `score::tests::tied_cells_break_alphabetically_for_determinism`
+- [ ] **REC-01**: User reads `recommend.rs` and finds a new `CellRecommendation` struct (fields: rank, alloc, env, composite_score, axes, tldr, strengths, weaknesses, recommended_for, avoid_for, suspect_flag) plus `top_n_cells() -> Vec<CellRecommendation>` — the existing `recommendations()` and its 13 unit tests are untouched
+- [ ] **REC-02**: User reads `recommend.rs` and finds named constants `TOP_N_SPIDER = 3`, `TOP_N_TABLE = 5`, `TOP_N_TOTAL = 10` — single source of truth shared between Markdown and HTML emitters (no magic numbers in templates)
+
+### Per-cell Artifacts
+
+- [ ] **CELL-01**: User reads `templates/recommend-cell.md.tmpl` and `templates/recommend-cell.html.tmpl` and finds two tinytemplate files driven by the **same `CellRecommendation` struct** — Markdown card and HTML panel are field-by-field identical
+- [ ] **CELL-02**: User runs `cargo test` and the test `html::tests::cell_templates_both_reference_all_fields` renders both templates with sentinel values and asserts both outputs contain every sentinel — prevents struct/template drift (the WR-01 pattern)
+- [ ] **CELL-03**: User runs `just aggregate` and the aggregator writes ten Markdown files `report/recommend-{rank:02d}-{alloc}-{env}.md` and ten HTML fragments `report/recommend-{rank:02d}-{alloc}-{env}.html` (rank zero-padded for natural filename sort)
+- [ ] **CELL-04**: User reads `REPORT.md` and finds a new `## Top 10 cells` section with the top-5 recommendation cards above the fold and the remaining 5 inside a collapsible `<details>` block (Cowan's 4±1 working-memory bound)
+- [ ] **CELL-05**: User reads each per-cell artifact and finds the structure: TL;DR (1 sentence) → Strengths → Weaknesses → Recommended-for → Avoid-for, 80–150 words total, **data-derived** (no hand-edited prose strings — the `*(suspect)*` italic suffix from v1.0 is the only allowed annotation)
+
+### Spider Chart
+
+- [ ] **POLAR-01**: User reads `polar.rs` and finds a top-N spider trace builder emitting `{ r: [...9], theta: [...9], type: 'scatterpolar', fill: 'toself' }` per cell — **9 elements, not 8** (closes the polygon by repeating `r[0]` and `theta[0]`); guarded by `polar::tests::trace_closes_polygon_with_9_elements`
+- [ ] **POLAR-02**: User opens `report/index.html` and finds a new `<div id="chart-spider">` rendering the **top-3 cells above the fold** as a small-multiples grid (one chart per cell), with a matrix-mean reference polygon overlaid at 25% alpha for context
+- [ ] **POLAR-03**: User opens `report/index.html` and finds the spider chart's heuristic axes (image-size efficiency, security posture) visually distinguished — `(heuristic)` suffix on the axis label and dashed gridline (or equivalent Plotly per-axis styling — Phase 4 plan resolves the exact mechanism)
+- [ ] **POLAR-04**: User runs `cargo test` and the test `html::tests::plotly_sri_hash_unchanged` pins the Plotly CDN URL + SRI hash to v2.35.3 — guards against a future contributor "upgrading" Plotly without verifying `scatterpolar` trace shape is unchanged
+- [ ] **POLAR-05**: User opens `report/index.html` and finds the v1.0 Recommendations table extended with a **Pareto-front overlay** column (P2 differentiator — cells on the Pareto front of `composite_score` vs `image_size_mb` carry a marker; defer-friendly if Phase 4 budget tight)
+
+### Direction Markers
+
+- [ ] **DIR-01**: User reads `REPORT.md` and finds every measurement column header in every per-scenario allocator-comparison table carrying a `↑` or `↓` glyph drawn from `axes.rs::arrow()` — e.g., `Throughput ↑ (ops/s)`, `Latency p99 ↓ (ns)`, `Peak RSS ↓ (MB)`
+- [ ] **DIR-02**: User reads `REPORT.md` and finds a one-line legend above every per-scenario table: `↑ higher is better · ↓ lower is better · ⚠ suspect run` — explicitly disclaims that the arrows are **direction markers, not column-sort indicators**
+- [ ] **DIR-03**: User opens `report/index.html` and finds every Plotly chart's axis label injected from `axes.rs` via `{ axis_label_* }` template placeholders carrying the same `↑` / `↓` glyphs as REPORT.md — single source of truth (no hard-coded labels in `index.html.tmpl`)
+- [ ] **DIR-04**: User reads `index.html` source and finds each direction-marker glyph wrapped in `<span aria-label="higher is better">↑</span>` (or `lower is better` for `↓`) for WCAG 2.1 SC 1.3.3 screen-reader accessibility
+- [ ] **DIR-05**: User reads `REPORT.md` cells and finds them **unchanged** from v1.0 byte-stable formatting — `{:.0}` for medians in multi-run cells, `{:.1}` for throughputs in single-run cells, `{}` for ns latencies (direction markers live in headers only, never in cells)
+
+### Test & Golden-fixture Discipline
+
+- [ ] **TEST-01**: User runs `cargo test` and **all v1.0 byte-identical-output golden tests still pass** — every byte that v1.0 emitted is unchanged for inputs that don't include security sidecars (security-axis em-dash fallback applies)
+- [ ] **TEST-02**: User reads the v1.1 PR list and finds Phase 6 (golden-fixture regeneration) shipped as **a single standalone PR with no production code** — reviewer can verify the regeneration was intentional; Phase A–E PRs each carry no fixture-byte changes (test fails loudly until Phase 6 lands)
+- [ ] **TEST-03**: User runs `cargo test` and the test `loader::tests::load_security_metas_returns_btreemap_sorted_by_env` asserts the return type is `BTreeMap` (compile-time type check) and iteration is alphabetically sorted by env key
+- [ ] **TEST-04**: User runs `cargo test` and the test `score::tests::composite_score_summation_order_matches_axes_rs_constant_order` asserts that scoring traverses axes in `MEASUREMENT_AXES` order — not via a collected `Vec` or `HashSet`
+- [ ] **TEST-05**: User runs `cargo test` and the test `score::tests::nan_input_does_not_corrupt_score` asserts NaN/inf inputs from `multi_run` raw `Run` data either propagate to a single sentinel score or short-circuit to em-dash — never silently sort to first/last (`partial_cmp` returns `None` for NaN, and pdqsort is not stable)
+
+## v1.2 Requirements (deferred)
+
+### Extended Visualization
+
+- **V12-01**: JS axis-weighting slider — interactive re-weighting of the 8 axes in the dashboard (deferred — breaks the static-`file://` contract; needs JSON-driven recompute)
+- **V12-02**: Cross-version diff radar — overlay a previous milestone's spider chart on the current one for regression spotting (deferred — needs persisted historical results)
+- **V12-03**: pulldown-cmark integration — only if recommendation prose grows beyond single-sentence rationale (links, lists, headings) — `tinytemplate`'s default-escape suffices for v1.1
+- **V12-04**: Per-cell drilldown navigation — clicking a spider chart in `index.html` navigates to its `recommend-{rank:02d}-{alloc}-{env}.html` panel (deferred — adds JS routing complexity)
+
+### Extended Scoring
+
+- **V12-05**: Workload-shape weighted scoring profiles (e.g., "web-heavy" → channel throughput + web score weighted 2×; "memory-heavy" → memory/fragmentation + RSS weighted 2×) (deferred — milestone v1.1 spec is equal weights)
+- **V12-06**: Confidence intervals on composite scores — propagate multi-run CV% into a score range (e.g., `87 ± 4`) (deferred — adds visual complexity to spider polygon)
+- **V12-07**: Heuristic-axis weight cap (≤12.5% aggregate) — deviates from milestone equal-weights spec; deferred unless v1.1 testing shows worst-perf cells ranking high on heuristics alone
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Mutating `crates/alloc-bench-core/src/output.rs` for `security_score` field | Locked v1 schema (Phase 1 D-11); sidecar pattern is the only correct path |
+| Plotly upgrade past 2.35.3 | Currently pinned bundle ships `scatterpolar`; SRI hash unchanged; future upgrade requires explicit trace-API audit gated by `plotly_sri_hash_unchanged` test |
+| New runtime crate dependencies | Hand-roll 15-LOC normalizer; hard-code `↑`/`↓` Unicode literals; security sidecar reuses `serde_json` 1 (no `statrs`, no `unicode-arrows`, no `pulldown-cmark` for v1.1) |
+| All top-10 cells overlaid on one spider chart | >3 polygons becomes occluded; small-multiples (one chart per cell, top-3 above the fold) is the convention |
+| Direction markers on every cell | Visual noise + breaks `{:.1}` byte-stable formatting; markers live in column headers only |
+| Heuristic axes without visual distinction | Mixing measured (perf) and heuristic (image-size, security) axes without a visual cue destroys credibility — `(heuristic)` suffix + dashed gridline is the minimum |
+| Hand-edited recommendation prose | Prose must be data-derived (template-rendered from `CellRecommendation` fields); only the `*(suspect)*` v1.0 italic suffix is allowed |
+| Raw min/max normalization without winsorization | A single crashed/outlier run squashes the entire axis range; p10/p90 winsorization at N=18 is the floor |
+| z-score normalization | Doesn't yield a 0–100 axis; min-max is the correct primitive for spider chart radial values |
+| Top-10 spider charts above the fold | Exceeds Cowan's 4±1 working-memory bound; tier display is top-3 above-fold + top-5 in table + top-10 in `<details>` |
+| GUI for editing security sidecars | 6 hand-curated JSON files; editing in `$EDITOR` is sufficient |
+| Snmalloc / tcmalloc / rpmalloc | Allocator matrix is locked at 4 (ptmalloc/mallocng/jemalloc/mimalloc); v2 if v1.1 ships clean |
+
+## Traceability
+
+Coverage: 32/32 v1.1 requirements mapped to exactly one phase. No orphans. Phase numbering continues from v1.0 (last phase = 5 / 5.1) → v1.1 starts at Phase 6.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| AXES-01 | Phase 6 | Pending |
+| AXES-02 | Phase 6 | Pending |
+| SEC-01 | Phase 6 | Pending |
+| SEC-02 | Phase 6 | Pending |
+| SEC-03 | Phase 6 | Pending |
+| GUARD-01 | Phase 6 | Pending |
+| SCORE-01 | Phase 7 | Pending |
+| SCORE-02 | Phase 7 | Pending |
+| SCORE-03 | Phase 7 | Pending |
+| SCORE-04 | Phase 7 | Pending |
+| REC-01 | Phase 7 | Pending |
+| REC-02 | Phase 7 | Pending |
+| CELL-01 | Phase 8 | Pending |
+| CELL-02 | Phase 8 | Pending |
+| CELL-03 | Phase 8 | Pending |
+| CELL-04 | Phase 8 | Pending |
+| CELL-05 | Phase 8 | Pending |
+| POLAR-01 | Phase 9 | Pending |
+| POLAR-02 | Phase 9 | Pending |
+| POLAR-03 | Phase 9 | Pending |
+| POLAR-04 | Phase 9 | Pending |
+| POLAR-05 | Phase 9 | Pending |
+| DIR-01 | Phase 10 | Pending |
+| DIR-02 | Phase 10 | Pending |
+| DIR-03 | Phase 10 | Pending |
+| DIR-04 | Phase 10 | Pending |
+| DIR-05 | Phase 10 | Pending |
+| TEST-01 | Phase 11 | Pending |
+| TEST-02 | Phase 11 | Pending |
+| TEST-03 | Phase 7 | Pending |
+| TEST-04 | Phase 7 | Pending |
+| TEST-05 | Phase 7 | Pending |
+
+### Coverage by Phase
+
+| Phase | Requirement Count | Requirements |
+|-------|-------------------|--------------|
+| Phase 6 — Foundations (axes registry + security sidecars + frozen-schema guard) | 6 | AXES-01..02, SEC-01..03, GUARD-01 |
+| Phase 7 — Scoring & Top-N (normalization + composite + recommendation struct) | 9 | SCORE-01..04, REC-01..02, TEST-03..05 |
+| Phase 8 — Per-cell Artifacts (Markdown + HTML cards via two templates) | 5 | CELL-01..05 |
+| Phase 9 — Spider Chart (polar.rs + chart wiring + Pareto overlay) | 5 | POLAR-01..05 |
+| Phase 10 — Direction Markers (column headers + axis labels + legend + a11y) | 5 | DIR-01..05 |
+| Phase 11 — Golden-fixture Regen (standalone PR; byte-identical pinning) | 2 | TEST-01..02 |
+| **Total** | **32** | — |
+
+> Note: `TEST-03/04/05` are listed under the Test & Golden-fixture Discipline category for cohesion, but their guarded-behavior is delivered in Phase 7 — so they're mapped there in the table above. Phase 11 carries only the 2 ship-time fixture-pinning requirements (`TEST-01`, `TEST-02`).
+
+---
+*Requirements defined: 2026-05-26*
+*Last updated: 2026-05-26 after milestone v1.1 scoping*
