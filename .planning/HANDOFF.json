@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-26T11:25:27.218Z",
+  "context": "phase",
+  "milestone": "v1.1",
+  "milestone_name": "Recommendations, Spider Charts & Direction Markers",
+  "phase": "07",
+  "phase_name": "Scoring & Top-N",
+  "status": "paused",
+  "stopped_at": "context exhaustion at 79% (2026-05-26)",
+  "branch": "main",
+  "head_commit": "a7d59f5",
+  "head_subject": "docs(07): capture phase context",
+  "completed_tasks": [
+    "Phase 6 Foundations fully shipped: 06-01 axes.rs registry (8 axes, Direction enum, arrow() helper), 06-02 security loader + 6 sidecars + --security CLI flag, 06-03 frozen-schema gate (SHA-256 pin in alloc-bench-core/tests/smoke.rs)",
+    "Phase 6 verifier agent: PASS verdict, all 6 requirements covered, no debt, no scope creep",
+    "Phase 6 worktrees cleaned, all 8 commits cherry-picked to main in plan order (linear history)",
+    "Phase 7 discuss-phase: 4 gray areas resolved (heuristic weights, winsorization fallback, suspect-flag propagation, per-cell prose source)",
+    "Phase 7 CONTEXT.md committed (a7d59f5): locked decisions for SCORE-01..04, REC-01, REC-02, TEST-03..05",
+    "STATE.md updated to reflect Phase 6 complete (50% milestone progress)"
+  ],
+  "remaining_tasks": [
+    "Phase 7 plan-phase: spawn researcher (opus) -> planner (opus) -> checker (sonnet); produce RESEARCH.md and PLAN files",
+    "Phase 7 execute-phase: implement score.rs (data-only) + recommend.rs::top_n_cells (prose-aware) + tests",
+    "Phase 8 Per-cell Artifacts: discuss -> plan -> execute (5 reqs, depends on Phase 7)",
+    "Phase 9 Spider Chart: discuss -> plan -> execute (5 reqs, depends on Phase 6 + Phase 7)",
+    "Phase 10 Direction Markers: discuss -> plan -> execute (5 reqs, depends on Phase 6)",
+    "Phase 11 Golden-fixture Regen: discuss -> plan -> execute (2 reqs, depends on Phase 10; standalone PR)",
+    "Milestone v1.1 lifecycle: audit -> complete -> cleanup"
+  ],
+  "next_action": {
+    "command": "/gsd:plan-phase 7",
+    "why": "Phase 7 CONTEXT.md is committed; planner workflow spawns researcher -> planner -> checker and produces PLAN files for execution.",
+    "expected_outputs": [
+      ".planning/phases/07-scoring-top-n/07-RESEARCH.md",
+      ".planning/phases/07-scoring-top-n/07-NN-PLAN.md (one or more)",
+      ".planning/phases/07-scoring-top-n/07-PLAN-CHECK.md"
+    ]
+  },
+  "phase_init_state": {
+    "has_context": true,
+    "has_research": false,
+    "has_plans": false,
+    "plan_count": 0,
+    "phase_status": "Pending",
+    "phase_req_ids": "SCORE-01, SCORE-02, SCORE-03, SCORE-04, REC-01, REC-02, TEST-03, TEST-04, TEST-05",
+    "researcher_model": "opus",
+    "planner_model": "opus",
+    "checker_model": "sonnet"
+  },
+  "phase_locked_decisions": {
+    "heuristic_weight_policy": "Equal 1/8 per axis ships as-is; V12-07 (cap at 12.5% aggregate) deferred to v1.2. Test heuristic_axes_cannot_promote_worst_measured_cell_to_top_1 defends worst case.",
+    "winsorization": "p10/p90 (not p5/p95 — collapses at N=18). Plan must include dry-run on tests/fixtures/multi-run-results/*.json; if any axis < 5 distinct scores, emit V12-04 TODO in score.rs::normalize_axis but ship p10/p90 unchanged.",
+    "per_cell_prose": "All five fields (tldr/strengths/weaknesses/recommended_for/avoid_for) axis-derived. Strengths=top-2 axes, weaknesses=bottom-2, recommended_for=existing recommendations() winners, avoid_for=bottom-2 across class rankings. tldr is templated 1-sentence.",
+    "suspect_flag": "Cell-level bool via OR aggregation across axes (any-axis-suspect promotes whole cell). Reuses v1.0 thresholds: samples_count<1000 OR warmup_duration_s<5.0.",
+    "top_n_constants": "TOP_N_SPIDER=3, TOP_N_TABLE=5, TOP_N_TOTAL=10. Single source of truth in recommend.rs.",
+    "module_split": "score.rs (data-only: normalize_axis, compute_axes, score_cells, top_n) and recommend.rs::top_n_cells (prose-aware) are separate. Existing 13 recommendations() tests untouched."
+  },
+  "verification_state": {
+    "workspace_tests": "174 passing on main",
+    "output_rs_locked": true,
+    "frozen_schema_sha256": "1bcfb91252eddc2710222abd46b031b85d91267d97a0874fa78d042c15f99a84",
+    "uncommitted_files": [],
+    "outstanding_worktrees": []
+  },
+  "resume_protocol": {
+    "step_1": "Read .planning/STATE.md and .planning/phases/07-scoring-top-n/07-CONTEXT.md to refresh phase context",
+    "step_2": "Run /gsd:plan-phase 7 (or /gsd-autonomous --from 7 to resume autonomous mode)",
+    "step_3": "Plan-phase will detect existing CONTEXT.md and skip discuss-phase, jumping straight to research"
+  }
+}
