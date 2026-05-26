@@ -21,15 +21,13 @@
 //!     channel-heavy → contention → cpu-bound → fragmentation-prone →
 //!     memory-bound → web-ser-de.
 //!
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use alloc_bench_core::output::Run;
 
 use crate::axes::MEASUREMENT_AXES;
 use crate::html::is_suspect;
-// `use crate::score::CellScore;` — added in Task 2 alongside `top_n_cells`
-// (the only consumer). Task 1 ships the prose-derivation helpers + struct
-// definition that are CellScore-free.
+use crate::score::CellScore;
 
 // ----------------------------------------------------------------------
 // Phase 7 / Plan 02 / REC-02 — top-N named constants (single source of
@@ -432,6 +430,244 @@ fn format_tldr(
     let s = strengths.first().copied().unwrap_or("insufficient data");
     let w = weaknesses.first().copied().unwrap_or("insufficient data");
     format!("{}/{} \u{2014} strong on {}, weak on {}.", alloc, env, s, w)
+}
+
+// ----------------------------------------------------------------------
+// Phase 7 / Plan 02 / Task 2 — top_n_cells + winners_by_class +
+// losers_by_class + env_short_name. These wire score.rs's data-only
+// CellScore output into the prose-decorated CellRecommendation.
+// ----------------------------------------------------------------------
+
+/// Private duplicate of `score.rs::env_short_name` (Phase 7 / v1.1). Both
+/// copies must agree byte-for-byte on env-extraction. v1.2 may consolidate
+/// to `crate::env::short_name`. See Plan 07-01 SUMMARY §Decisions for the
+/// duplication rationale (W-03 cross-reference).
+///
+/// Extraction recipe: split `r.env.docker_image` on `:` (taking the right
+/// half), then split that on `-` and take element `[1]`. So
+/// `"alloc-bench:jemalloc-alpine"` → `"alpine"`. Defensive fallback on any
+/// missing/malformed segment is the literal `"host"` (matches the
+/// `markdown::env_label` host-fallback convention).
+fn env_short_name(r: &Run) -> String {
+    let image = match r.env.docker_image.as_deref() {
+        Some(s) => s,
+        None => return "host".to_string(),
+    };
+    let after_colon = match image.split_once(':') {
+        Some((_, right)) => right,
+        None => return "host".to_string(),
+    };
+    let mut parts = after_colon.splitn(2, '-');
+    let _alloc = parts.next();
+    match parts.next() {
+        Some(env) if !env.is_empty() => env.to_string(),
+        _ => "host".to_string(),
+    }
+}
+
+/// Mean throughput across the scenarios in `scenarios` for the cell
+/// `(alloc, env)`, averaged over scenarios that the cell measured. Returns
+/// `None` if the cell measured ZERO of the class scenarios. Mirrors the
+/// existing `recommend_for_class` per-allocator scoring at lines
+/// 158-187 but keyed on `(alloc, env)` granularity (not just allocator).
+fn cell_class_mean(
+    runs: &[Run],
+    alloc: &str,
+    env: &str,
+    scenarios: &[&'static str],
+) -> Option<f64> {
+    let mut throughputs: Vec<f64> = Vec::new();
+    for &scen in scenarios {
+        let scen_throughputs: Vec<f64> = runs
+            .iter()
+            .filter(|r| r.build.allocator == alloc)
+            .filter(|r| env_short_name(r) == env)
+            .filter(|r| r.scenario.name == scen)
+            .map(|r| r.metrics.ticks_per_s)
+            .collect();
+        if scen_throughputs.is_empty() {
+            continue;
+        }
+        // Per-scenario central tendency: median for n>=2, mean fallback
+        // (matches the existing recommend_for_class logic at line 172).
+        let central = match crate::multi_run::aggregate(&scen_throughputs) {
+            Some(stats) => stats.median,
+            None => {
+                let n = scen_throughputs.len();
+                scen_throughputs.iter().sum::<f64>() / (n as f64).max(1.0)
+            }
+        };
+        throughputs.push(central);
+    }
+    if throughputs.is_empty() {
+        None
+    } else {
+        Some(throughputs.iter().sum::<f64>() / throughputs.len() as f64)
+    }
+}
+
+/// Per-class winner detection at `(alloc, env)` granularity. Unlike the
+/// existing `recommend_for_class`, which collapses to a `String` allocator
+/// name (losing env), this returns the full `(alloc, env)` tuple of the
+/// per-class top cell. Reused by `top_n_cells` to populate
+/// `CellRecommendation.recommended_for`.
+///
+/// Algorithm:
+///   1. For every `WorkloadClass` in `ALL_CLASSES`, collect the universe
+///      of `(alloc, env)` cells that measured at least one of the class
+///      scenarios (a `BTreeSet` so iteration is alphabetical).
+///   2. For each candidate cell, compute the mean throughput across that
+///      class's scenarios via `cell_class_mean`.
+///   3. Pick the cell with the maximum mean (alphabetical tiebreak via the
+///      BTreeSet iteration order).
+///   4. Insert `(class.label(), { (alloc, env) })` into the output map.
+///   5. Classes with no measured cells contribute an empty `BTreeSet`.
+fn winners_by_class(runs: &[Run]) -> BTreeMap<&'static str, BTreeSet<(String, String)>> {
+    let mut out: BTreeMap<&'static str, BTreeSet<(String, String)>> = BTreeMap::new();
+    for class in ALL_CLASSES.iter() {
+        let scenarios = class.scenarios();
+        // Collect the universe of (alloc, env) cells that measured at
+        // least one scenario of this class.
+        let mut candidates: BTreeSet<(String, String)> = BTreeSet::new();
+        for r in runs {
+            if scenarios.contains(&r.scenario.name.as_str()) {
+                candidates.insert((r.build.allocator.clone(), env_short_name(r)));
+            }
+        }
+        // For each candidate, compute the class-mean.
+        let mut scored: Vec<(String, String, f64)> = candidates
+            .into_iter()
+            .filter_map(|(alloc, env)| {
+                cell_class_mean(runs, &alloc, &env, scenarios)
+                    .map(|m| (alloc, env, m))
+            })
+            .collect();
+        // Sort by score DESC; alphabetical tiebreak on (alloc, env).
+        scored.sort_by(|a, b| {
+            b.2.partial_cmp(&a.2)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+                .then_with(|| a.1.cmp(&b.1))
+        });
+        let mut winner_set: BTreeSet<(String, String)> = BTreeSet::new();
+        if let Some(top) = scored.first() {
+            winner_set.insert((top.0.clone(), top.1.clone()));
+        }
+        out.insert(class.label(), winner_set);
+    }
+    out
+}
+
+/// Per-class bottom-2 detection at `(alloc, env)` granularity. Mirrors
+/// `winners_by_class` but identifies the BOTTOM 2 cells by mean (sorted
+/// ASC by mean; alphabetical tiebreak by `(alloc, env)`). If a class has
+/// fewer than 2 measured cells, the entry is an empty `BTreeSet`.
+///
+/// Used by `top_n_cells` to populate `CellRecommendation.avoid_for`.
+fn losers_by_class(runs: &[Run]) -> BTreeMap<&'static str, BTreeSet<(String, String)>> {
+    let mut out: BTreeMap<&'static str, BTreeSet<(String, String)>> = BTreeMap::new();
+    for class in ALL_CLASSES.iter() {
+        let scenarios = class.scenarios();
+        let mut candidates: BTreeSet<(String, String)> = BTreeSet::new();
+        for r in runs {
+            if scenarios.contains(&r.scenario.name.as_str()) {
+                candidates.insert((r.build.allocator.clone(), env_short_name(r)));
+            }
+        }
+        let mut scored: Vec<(String, String, f64)> = candidates
+            .into_iter()
+            .filter_map(|(alloc, env)| {
+                cell_class_mean(runs, &alloc, &env, scenarios)
+                    .map(|m| (alloc, env, m))
+            })
+            .collect();
+        // Bottom 2: sort ASC by score; alphabetical tiebreak on (alloc, env).
+        scored.sort_by(|a, b| {
+            a.2.partial_cmp(&b.2)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+                .then_with(|| a.1.cmp(&b.1))
+        });
+        let mut loser_set: BTreeSet<(String, String)> = BTreeSet::new();
+        // Bottom 2 only emitted when ≥2 cells measured (matches plan
+        // <interfaces>: "If a class has fewer than 2 measured cells, it
+        // contributes no entries").
+        if scored.len() >= 2 {
+            loser_set.insert((scored[0].0.clone(), scored[0].1.clone()));
+            loser_set.insert((scored[1].0.clone(), scored[1].1.clone()));
+        }
+        out.insert(class.label(), loser_set);
+    }
+    out
+}
+
+/// Build top-N prose-decorated recommendations. Length is
+/// `min(TOP_N_TOTAL, scores.len())`. `scores` MUST be the full 18-cell
+/// `Vec<CellScore>` from `score::score_cells` — passing a pre-truncated
+/// top-N would corrupt the avoid_for class-bottom-2 ranking (because
+/// `losers_by_class` ranks across the FULL run set, not just the top-N
+/// cells).
+///
+/// Algorithm (locked per Plan 07-02 <interfaces>):
+///   1. Truncate to the global top-N via `score::top_n(scores, TOP_N_TOTAL)`.
+///   2. Pre-compute the per-class winner / loser maps in a single pass
+///      over `runs` (no quadratic re-traversal per cell).
+///   3. For each top-N cell, derive strengths/weaknesses, format the
+///      tldr, intersect the winner / loser maps to produce
+///      recommended_for / avoid_for, and OR-aggregate is_suspect over
+///      the cell's runs.
+pub fn top_n_cells(scores: Vec<CellScore>, runs: &[Run]) -> Vec<CellRecommendation> {
+    let top_scores = crate::score::top_n(scores, TOP_N_TOTAL);
+    let winners = winners_by_class(runs);
+    let losers = losers_by_class(runs);
+
+    top_scores
+        .into_iter()
+        .enumerate()
+        .map(|(i, cell)| {
+            let strengths = derive_strengths(&cell.axes);
+            let weaknesses = derive_weaknesses(&cell.axes);
+            let tldr = format_tldr(&cell.alloc, &cell.env, &strengths, &weaknesses);
+
+            let cell_pair = (cell.alloc.clone(), cell.env.clone());
+
+            // BTreeMap iteration is alphabetical → output is naturally sorted.
+            let recommended_for: Vec<&'static str> = winners
+                .iter()
+                .filter(|(_, set)| set.contains(&cell_pair))
+                .map(|(class, _)| *class)
+                .collect();
+            let avoid_for: Vec<&'static str> = losers
+                .iter()
+                .filter(|(_, set)| set.contains(&cell_pair))
+                .map(|(class, _)| *class)
+                .collect();
+
+            // Filter runs matching this cell. `Run` does not derive `Clone`
+            // (v1 schema GUARD-01) so we collect borrows; cell_is_suspect
+            // accepts `IntoIterator<Item = &Run>` so the borrowed slice
+            // satisfies the bound directly.
+            let cell_runs: Vec<&Run> = runs
+                .iter()
+                .filter(|r| r.build.allocator == cell.alloc && env_short_name(r) == cell.env)
+                .collect();
+            let suspect_flag = cell_is_suspect(cell_runs.iter().copied());
+
+            CellRecommendation {
+                rank: i + 1,
+                alloc: cell.alloc.clone(),
+                env: cell.env.clone(),
+                composite_score: cell.composite,
+                axes: cell.axes.clone(),
+                tldr,
+                strengths,
+                weaknesses,
+                recommended_for,
+                avoid_for,
+                suspect_flag,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
