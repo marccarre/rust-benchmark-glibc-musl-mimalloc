@@ -25,7 +25,31 @@ use std::collections::BTreeMap;
 
 use alloc_bench_core::output::Run;
 
+use crate::axes::MEASUREMENT_AXES;
 use crate::html::is_suspect;
+// `use crate::score::CellScore;` — added in Task 2 alongside `top_n_cells`
+// (the only consumer). Task 1 ships the prose-derivation helpers + struct
+// definition that are CellScore-free.
+
+// ----------------------------------------------------------------------
+// Phase 7 / Plan 02 / REC-02 — top-N named constants (single source of
+// truth shared with Phase 8 templates and Phase 9 polar.rs). No magic
+// numbers in templates.
+// ----------------------------------------------------------------------
+
+/// Top-3 cells overlaid on the Phase 9 spider chart (small-multiples
+/// grid above the fold). Phase 9 polar.rs uses
+/// `score::top_n(scores, TOP_N_SPIDER)` to skip prose computation on
+/// the chart hot path.
+pub const TOP_N_SPIDER: usize = 3;
+
+/// Top-5 cells in the above-the-fold REPORT.md table (Phase 8).
+pub const TOP_N_TABLE: usize = 5;
+
+/// Total cards / fragments emitted by Phase 8 templates
+/// (`recommend-cell.{md,html}.tmpl`). Also pins the body length of
+/// `top_n_cells`: `min(TOP_N_TOTAL, scores.len())`.
+pub const TOP_N_TOTAL: usize = 10;
 
 /// Public output row. Emitted into the REPORT.md `## Recommendations by
 /// workload` table by `markdown::emit_recommendations`. The `class` field
@@ -89,6 +113,44 @@ const ALL_CLASSES: [WorkloadClass; 6] = [
     WorkloadClass::MemoryBound,
     WorkloadClass::WebSerDe,
 ];
+
+/// Phase 7 / REC-01 — prose-decorated top-N row. All five prose fields
+/// (`tldr`, `strengths`, `weaknesses`, `recommended_for`, `avoid_for`)
+/// are axis-derived; no hand-curated lookup table is consulted.
+///
+/// Field semantics (locked in 07-CONTEXT and 07-RESEARCH §2):
+///   - `rank`: 1-indexed position after `(composite DESC, alloc ASC,
+///     env ASC)` sort.
+///   - `composite_score`: copied from the source `CellScore.composite`.
+///   - `axes`: copied from `CellScore.axes` — `BTreeMap` keeps
+///     alphabetical iteration matching `MEASUREMENT_AXES` declaration
+///     order (CLAUDE.md byte-identical-output discipline).
+///   - `tldr`: single sentence, `format_tldr`-derived.
+///   - `strengths`: top-2 `MEASUREMENT_AXES[i].label` strings (DESC by
+///     score, alphabetical tiebreak on key).
+///   - `weaknesses`: bottom-2 labels (ASC by score, same tiebreak).
+///   - `recommended_for`: alphabetical class labels where this `(alloc,
+///     env)` cell is the per-class winner. Reuses winner detection
+///     from the existing `recommendations()` logic but at `(alloc,
+///     env)` granularity (not the `String` allocator name).
+///   - `avoid_for`: alphabetical class labels where this cell is in
+///     the bottom 2 of the per-class ranking.
+///   - `suspect_flag`: OR aggregation of `html::is_suspect` over every
+///     run contributing to this cell.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CellRecommendation {
+    pub rank: usize,
+    pub alloc: String,
+    pub env: String,
+    pub composite_score: f64,
+    pub axes: BTreeMap<&'static str, f64>,
+    pub tldr: String,
+    pub strengths: Vec<&'static str>,
+    pub weaknesses: Vec<&'static str>,
+    pub recommended_for: Vec<&'static str>,
+    pub avoid_for: Vec<&'static str>,
+    pub suspect_flag: bool,
+}
 
 /// Build per-class recommendations from the loaded Run set. Always
 /// returns six rows (one per class) — never skips a class — so the
@@ -281,6 +343,95 @@ fn pick_rationale_scenario(
     }
     // Fallback: alphabetically-first scenario in the class.
     best.map(|(s, _)| s).unwrap_or(scenarios[0])
+}
+
+// ----------------------------------------------------------------------
+// Phase 7 / Plan 02 / Task 1 — REC-01 prose-derivation helpers.
+//
+// All four helpers are private to this module. Task 2 stitches them into
+// the public `top_n_cells` entrypoint.
+// ----------------------------------------------------------------------
+
+/// REC-01 / suspect-flag aggregation. Short-circuit OR over
+/// `html::is_suspect`. Generic `IntoIterator<Item = &Run>` form so
+/// callers can pass a `&[Run]` slice OR a `Vec<&Run>` of borrows
+/// (Run does not derive Clone per the v1 schema GUARD-01). `&[Run]`
+/// satisfies the bound via the standard library's
+/// `impl<'a, T> IntoIterator for &'a [T]`.
+fn cell_is_suspect<'a, I: IntoIterator<Item = &'a Run>>(cell_runs: I) -> bool {
+    cell_runs.into_iter().any(|r| is_suspect(&r.harness))
+}
+
+/// REC-01 — top-2 axis LABELS by normalized score DESCENDING with
+/// alphabetical tiebreak on `axis_key`. Returns
+/// `MEASUREMENT_AXES[i].label` (NOT `key`) — these strings are
+/// human-facing prose consumed by the Phase 8 templates.
+///
+/// Defensive: if `axes` has fewer than 2 entries, returns whatever is
+/// available (this path is unreachable for production data because
+/// `compute_axes` always emits all 8 keys, but it guards test fixtures
+/// with sparse axes).
+fn derive_strengths(axes: &BTreeMap<&'static str, f64>) -> Vec<&'static str> {
+    let mut pairs: Vec<(&'static str, f64)> = axes.iter().map(|(k, v)| (*k, *v)).collect();
+    // DESC by score; ASC by key on tie (NaN → Equal, falls through to key sort).
+    pairs.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(b.0))
+    });
+    pairs
+        .into_iter()
+        .take(2)
+        .map(|(key, _)| {
+            MEASUREMENT_AXES
+                .iter()
+                .find(|s| s.key == key)
+                .map(|s| s.label)
+                .unwrap_or("unknown")
+        })
+        .collect()
+}
+
+/// REC-01 — bottom-2 axis LABELS by normalized score ASCENDING with
+/// alphabetical tiebreak on `axis_key`. Mirror of `derive_strengths`
+/// with inverted primary sort.
+fn derive_weaknesses(axes: &BTreeMap<&'static str, f64>) -> Vec<&'static str> {
+    let mut pairs: Vec<(&'static str, f64)> = axes.iter().map(|(k, v)| (*k, *v)).collect();
+    // ASC by score; ASC by key on tie.
+    pairs.sort_by(|a, b| {
+        a.1.partial_cmp(&b.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(b.0))
+    });
+    pairs
+        .into_iter()
+        .take(2)
+        .map(|(key, _)| {
+            MEASUREMENT_AXES
+                .iter()
+                .find(|s| s.key == key)
+                .map(|s| s.label)
+                .unwrap_or("unknown")
+        })
+        .collect()
+}
+
+/// REC-01 — single-sentence TLDR. Locked shape:
+///   `"{alloc}/{env} \u{2014} strong on {top_strength}, weak on {bottom_weakness}."`
+/// Em-dash glyph U+2014 matches the existing recommend.rs:144 / 205
+/// "no measurements" path. Defensive: if `strengths`/`weaknesses` is
+/// empty, the literal `"insufficient data"` is substituted (unreachable
+/// for production data — `compute_axes` always emits 8 keys — but
+/// guards sparse test fixtures).
+fn format_tldr(
+    alloc: &str,
+    env: &str,
+    strengths: &[&'static str],
+    weaknesses: &[&'static str],
+) -> String {
+    let s = strengths.first().copied().unwrap_or("insufficient data");
+    let w = weaknesses.first().copied().unwrap_or("insufficient data");
+    format!("{}/{} \u{2014} strong on {}, weak on {}.", alloc, env, s, w)
 }
 
 #[cfg(test)]
