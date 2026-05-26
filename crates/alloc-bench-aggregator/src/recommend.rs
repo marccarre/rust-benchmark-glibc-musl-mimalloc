@@ -835,4 +835,306 @@ mod tests {
         assert!(!cell_is_suspect(runs.iter()));
         assert!(!cell_is_suspect(&runs[..]));
     }
+
+    // ------------------------------------------------------------------
+    // Phase 7 / Plan 02 / Task 2 tests (REC-01 integration — top_n_cells
+    // and the winners_by_class / losers_by_class / env_short_name
+    // helpers).
+    //
+    // Five tests:
+    //   - cell_recommendation_populates_all_fields_from_axes
+    //   - cell_recommendation_recommended_for_uses_existing_winners
+    //   - cell_recommendation_avoid_for_is_bottom_2_class_rankings
+    //   - top_n_cells_truncates_to_top_n_total_constant
+    //   - top_n_cells_handles_fewer_than_top_n_total_input
+    // ------------------------------------------------------------------
+
+    use crate::score::CellScore as TestCellScore;
+
+    /// Build a `Run` whose `env.docker_image` is set to
+    /// `"alloc-bench:{alloc}-{env}"` so `recommend.rs::env_short_name` can
+    /// extract the short env name (matches the format produced by the
+    /// `justfile` Docker tagging recipe). All other fields are sentinel
+    /// values; harness defaults to healthy (50_000 samples, 5.0 s warmup).
+    fn synth_run_with_env(
+        alloc: &str,
+        env: &str,
+        scenario: &str,
+        throughput: f64,
+        samples: u64,
+        warmup: f64,
+    ) -> Run {
+        Run {
+            schema_version: alloc_bench_core::SCHEMA_VERSION,
+            run_id: format!("synth-{alloc}-{env}-{scenario}"),
+            env: Env {
+                os: "linux".into(),
+                os_version: "test".into(),
+                docker_image: Some(format!("alloc-bench:{alloc}-{env}")),
+                cpu_model: "test-cpu".into(),
+                cpu_count: 1,
+                memory_total_kb: 1,
+            },
+            build: Build {
+                allocator: alloc.into(),
+                rustc_version: "1.83.0".into(),
+                target_triple: "x86_64-unknown-linux-gnu".into(),
+                host_triple: "x86_64-unknown-linux-gnu".into(),
+                profile: "release".into(),
+                git_sha: "0".repeat(40),
+                git_dirty: false,
+                build_timestamp: "2026-05-19T00:00:00Z".into(),
+                rustflags: "".into(),
+            },
+            scenario: ScenarioInfo {
+                name: scenario.into(),
+                config: serde_json::json!({}),
+                unit: None,
+            },
+            harness: HarnessInfo {
+                warmup_duration_s: warmup,
+                measurement_duration_s: 5.0,
+                samples_count: samples,
+            },
+            metrics: Metrics {
+                ticks_per_s: throughput,
+                allocations_per_tick: 100,
+                tick_latency_ns: LatencyNs {
+                    p50: 1000,
+                    p95: 2000,
+                    p99: 3000,
+                    p999: 5000,
+                    max: 10000,
+                },
+                peak_rss_kb: 1000,
+                rss_growth_samples: vec![],
+                rusage: Rusage {
+                    user_time_s: 0.0,
+                    sys_time_s: 0.0,
+                    minor_faults: 0,
+                    major_faults: 0,
+                    voluntary_csw: 0,
+                    involuntary_csw: 0,
+                    peak_rss_kb: 1000,
+                },
+                allocator_stats: serde_json::json!({}),
+            },
+            status: Some("success".into()),
+            error: None,
+        }
+    }
+
+    /// Build a `BTreeMap<&'static str, f64>` with all 8 axis keys populated
+    /// from `[(key, value); 8]` overrides. Keys must be a subset of
+    /// `MEASUREMENT_AXES`; missing keys default to 0.0.
+    fn build_axes_btreemap(values: &[(&'static str, f64)]) -> BTreeMap<&'static str, f64> {
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        for spec in MEASUREMENT_AXES.iter() {
+            axes.insert(spec.key, 0.0);
+        }
+        for (k, v) in values {
+            axes.insert(*k, *v);
+        }
+        axes
+    }
+
+    /// Synthesize a `CellScore` with the given alloc/env/composite and a
+    /// uniform per-axis score `axis_v`. Used by the truncation tests where
+    /// per-axis values do not matter — only ranking does.
+    fn synth_cell_score_uniform(
+        alloc: &str,
+        env: &str,
+        composite: f64,
+        axis_v: f64,
+    ) -> TestCellScore {
+        TestCellScore {
+            alloc: alloc.into(),
+            env: env.into(),
+            composite,
+            axes: build_axes_btreemap(&MEASUREMENT_AXES.map(|s| (s.key, axis_v))),
+        }
+    }
+
+    /// REC-01 integration: `top_n_cells(scores, runs)[0]` populates all 11
+    /// fields. We exercise the full surface — composite copy, axes copy,
+    /// non-empty prose strings, strengths/weaknesses length 2, and a
+    /// well-typed `suspect_flag`.
+    #[test]
+    fn cell_recommendation_populates_all_fields_from_axes() {
+        // Single 1-cell fixture is sufficient to verify field plumbing.
+        // Spike one strong axis and one weak axis so strengths[0] /
+        // weaknesses[0] are deterministic.
+        let axes = build_axes_btreemap(&[
+            ("cpu_bound_throughput", 95.0),  // top
+            ("memory_fragmentation", 5.0),   // bottom
+            ("channel_throughput", 50.0),
+            ("image_size_efficiency", 50.0),
+            ("multithread_throughput", 50.0),
+            ("resilience", 50.0),
+            ("security_posture", 50.0),
+            ("web_throughput", 50.0),
+        ]);
+        let composite = 50.0;
+        let scores = vec![TestCellScore {
+            alloc: "jemalloc".into(),
+            env: "alpine".into(),
+            composite,
+            axes: axes.clone(),
+        }];
+        let runs = vec![synth_run_with_env(
+            "jemalloc",
+            "alpine",
+            "cpu-bound",
+            100.0,
+            50_000,
+            5.0,
+        )];
+
+        let recs = top_n_cells(scores, &runs);
+        assert_eq!(recs.len(), 1);
+        let r = &recs[0];
+
+        assert_eq!(r.rank, 1, "rank is 1-indexed");
+        assert_eq!(r.alloc, "jemalloc");
+        assert_eq!(r.env, "alpine");
+        assert!(
+            (r.composite_score - composite).abs() < 1e-9,
+            "composite_score should be copied: got {}",
+            r.composite_score
+        );
+        assert_eq!(r.axes, axes, "axes should be copied entry-equal");
+        assert!(!r.tldr.is_empty(), "tldr non-empty");
+        assert_eq!(r.strengths.len(), 2, "strengths.len() == 2");
+        assert_eq!(r.weaknesses.len(), 2, "weaknesses.len() == 2");
+        // Strongest axis is cpu_bound_throughput → "CPU-bound throughput".
+        assert_eq!(r.strengths[0], "CPU-bound throughput");
+        // Weakest axis is memory_fragmentation → "Memory / fragmentation".
+        assert_eq!(r.weaknesses[0], "Memory / fragmentation");
+        // suspect_flag is a deterministic bool — healthy run → false.
+        assert!(!r.suspect_flag);
+    }
+
+    /// REC-01: `recommended_for` reuses winner detection at `(alloc, env)`
+    /// granularity. Synthesize runs where `(jemalloc, alpine)` dominates
+    /// `cpu-bound` and `web`; assert recommended_for = ["cpu-bound",
+    /// "web-ser-de"] (alphabetical). Other cells contribute at lower
+    /// throughputs so the winner is unambiguous.
+    #[test]
+    fn cell_recommendation_recommended_for_uses_existing_winners() {
+        // (jemalloc, alpine) dominates cpu-bound and web; (ptmalloc,
+        // debian-slim) is also measured but lower.
+        let runs = vec![
+            // cpu-bound: jemalloc/alpine wins.
+            synth_run_with_env("jemalloc", "alpine", "cpu-bound", 200.0, 50_000, 5.0),
+            synth_run_with_env("ptmalloc", "debian-slim", "cpu-bound", 100.0, 50_000, 5.0),
+            // web: jemalloc/alpine wins.
+            synth_run_with_env("jemalloc", "alpine", "web", 1800.0, 50_000, 5.0),
+            synth_run_with_env("ptmalloc", "debian-slim", "web", 1200.0, 50_000, 5.0),
+        ];
+        let scores = vec![
+            // jemalloc/alpine ranked first.
+            synth_cell_score_uniform("jemalloc", "alpine", 80.0, 80.0),
+            // ptmalloc/debian-slim ranked second.
+            synth_cell_score_uniform("ptmalloc", "debian-slim", 40.0, 40.0),
+        ];
+
+        let recs = top_n_cells(scores, &runs);
+        let winner = recs
+            .iter()
+            .find(|r| r.alloc == "jemalloc" && r.env == "alpine")
+            .expect("winner present");
+        assert_eq!(
+            winner.recommended_for,
+            vec!["cpu-bound", "web-ser-de"],
+            "should win cpu-bound + web-ser-de classes (alphabetical)"
+        );
+    }
+
+    /// REC-01: `avoid_for` reports the per-class bottom-2 cells. 4-cell
+    /// fixture where `(ptmalloc, debian-slim)` is the bottom of cpu-bound
+    /// and web throughput. With 4 measured cells per class, bottom-2
+    /// selects the two lowest. We pin `(ptmalloc, debian-slim)` AND
+    /// `(jemalloc, debian-slim)` as the bottom-2 for both classes.
+    #[test]
+    fn cell_recommendation_avoid_for_is_bottom_2_class_rankings() {
+        let runs = vec![
+            // cpu-bound: (ptmalloc, debian-slim) lowest.
+            synth_run_with_env("mimalloc", "wolfi", "cpu-bound", 200.0, 50_000, 5.0),
+            synth_run_with_env("jemalloc", "alpine", "cpu-bound", 180.0, 50_000, 5.0),
+            synth_run_with_env("jemalloc", "debian-slim", "cpu-bound", 120.0, 50_000, 5.0),
+            synth_run_with_env("ptmalloc", "debian-slim", "cpu-bound", 100.0, 50_000, 5.0),
+            // web: same bottom-2 ordering.
+            synth_run_with_env("mimalloc", "wolfi", "web", 1800.0, 50_000, 5.0),
+            synth_run_with_env("jemalloc", "alpine", "web", 1700.0, 50_000, 5.0),
+            synth_run_with_env("jemalloc", "debian-slim", "web", 1300.0, 50_000, 5.0),
+            synth_run_with_env("ptmalloc", "debian-slim", "web", 1200.0, 50_000, 5.0),
+        ];
+        let scores = vec![
+            synth_cell_score_uniform("mimalloc", "wolfi", 80.0, 80.0),
+            synth_cell_score_uniform("jemalloc", "alpine", 70.0, 70.0),
+            synth_cell_score_uniform("jemalloc", "debian-slim", 40.0, 40.0),
+            synth_cell_score_uniform("ptmalloc", "debian-slim", 20.0, 20.0),
+        ];
+
+        let recs = top_n_cells(scores, &runs);
+        let loser = recs
+            .iter()
+            .find(|r| r.alloc == "ptmalloc" && r.env == "debian-slim")
+            .expect("(ptmalloc, debian-slim) present in top-N");
+        // (ptmalloc, debian-slim) is bottom of cpu-bound AND web → both
+        // classes appear in avoid_for, alphabetical.
+        assert!(
+            loser.avoid_for.contains(&"cpu-bound"),
+            "expected cpu-bound in avoid_for, got {:?}",
+            loser.avoid_for
+        );
+        assert!(
+            loser.avoid_for.contains(&"web-ser-de"),
+            "expected web-ser-de in avoid_for, got {:?}",
+            loser.avoid_for
+        );
+        // BTreeMap iteration → labels sorted alphabetically: "cpu-bound" <
+        // "web-ser-de".
+        let cpu_idx = loser.avoid_for.iter().position(|c| *c == "cpu-bound");
+        let web_idx = loser.avoid_for.iter().position(|c| *c == "web-ser-de");
+        assert!(
+            cpu_idx < web_idx,
+            "cpu-bound should sort before web-ser-de in avoid_for"
+        );
+    }
+
+    /// REC-01 + REC-02: `top_n_cells` truncates 18 cells → 10 (TOP_N_TOTAL).
+    #[test]
+    fn top_n_cells_truncates_to_top_n_total_constant() {
+        let scores: Vec<TestCellScore> = (1..=18)
+            .map(|i| {
+                let alloc = format!("alloc{:02}", i);
+                let env = format!("env{:02}", i);
+                synth_cell_score_uniform(&alloc, &env, i as f64, 50.0)
+            })
+            .collect();
+        // Empty runs is acceptable here — recommended_for / avoid_for /
+        // suspect_flag will all be empty/false. We test the truncation
+        // boundary, not class detection.
+        let runs: Vec<Run> = Vec::new();
+        let recs = top_n_cells(scores, &runs);
+        assert_eq!(recs.len(), TOP_N_TOTAL);
+        assert_eq!(recs.len(), 10);
+    }
+
+    /// REC-01: `top_n_cells` handles fewer-than-TOP_N_TOTAL inputs (defensive
+    /// `min(TOP_N_TOTAL, scores.len())`). 3 input cells → 3 output rows.
+    #[test]
+    fn top_n_cells_handles_fewer_than_top_n_total_input() {
+        let scores: Vec<TestCellScore> = (1..=3)
+            .map(|i| {
+                let alloc = format!("alloc{:02}", i);
+                let env = format!("env{:02}", i);
+                synth_cell_score_uniform(&alloc, &env, i as f64, 50.0)
+            })
+            .collect();
+        let runs: Vec<Run> = Vec::new();
+        let recs = top_n_cells(scores, &runs);
+        assert_eq!(recs.len(), 3);
+    }
 }
