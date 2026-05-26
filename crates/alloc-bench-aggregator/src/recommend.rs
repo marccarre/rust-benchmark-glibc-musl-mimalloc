@@ -554,4 +554,134 @@ mod tests {
             r.rationale
         );
     }
+
+    // ------------------------------------------------------------------
+    // Phase 7 / Plan 02 / Task 1 tests (REC-01 helpers + REC-02 constants)
+    //
+    // Six tests cover:
+    //   - top_n_constants_match_locked_values            (REC-02)
+    //   - cell_recommendation_strengths_top_2_alphabetical_tiebreak (REC-01)
+    //   - cell_recommendation_weaknesses_bottom_2_alphabetical_tiebreak
+    //   - cell_recommendation_tldr_is_templated_one_sentence
+    //   - cell_recommendation_suspect_flag_true_when_any_run_suspect
+    //   - cell_recommendation_suspect_flag_false_when_all_runs_healthy
+    //
+    // Helper `synth_run` (lines 297-362) is reused.
+    // ------------------------------------------------------------------
+
+    /// REC-02: the three top-N constants are pinned to the locked values
+    /// `3 / 5 / 10` (Phase 9 polar.rs spider; Phase 8 above-the-fold table;
+    /// Phase 8 total cards/fragments). Any drift breaks downstream consumers.
+    #[test]
+    fn top_n_constants_match_locked_values() {
+        assert_eq!(TOP_N_SPIDER, 3);
+        assert_eq!(TOP_N_TABLE, 5);
+        assert_eq!(TOP_N_TOTAL, 10);
+    }
+
+    /// REC-01 helper: `derive_strengths` returns the top-2 axes by score
+    /// DESCENDING with alphabetical tiebreak on `axis_key`. Two axes tied at
+    /// 95.0 (`channel_throughput` and `web_throughput`) — alphabetical sort
+    /// on the keys (NOT the labels) places `channel_throughput` first. The
+    /// returned vector stores `MEASUREMENT_AXES[i].label` strings, NOT keys.
+    #[test]
+    fn cell_recommendation_strengths_top_2_alphabetical_tiebreak() {
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        axes.insert("channel_throughput", 95.0); // tied top
+        axes.insert("cpu_bound_throughput", 50.0);
+        axes.insert("image_size_efficiency", 50.0);
+        axes.insert("memory_fragmentation", 50.0);
+        axes.insert("multithread_throughput", 50.0);
+        axes.insert("resilience", 50.0);
+        axes.insert("security_posture", 50.0);
+        axes.insert("web_throughput", 95.0); // tied top
+        let out = derive_strengths(&axes);
+        assert_eq!(
+            out,
+            vec!["Channel throughput", "Web throughput"],
+            "tied tops break alphabetically on axis_key (channel < web)"
+        );
+    }
+
+    /// REC-01 helper: `derive_weaknesses` returns the bottom-2 axes by score
+    /// ASCENDING with alphabetical tiebreak on `axis_key`. Two axes tied at
+    /// 5.0 (`cpu_bound_throughput` and `multithread_throughput`) — keys sort
+    /// `cpu_bound_throughput` < `multithread_throughput`, so labels appear in
+    /// the order "CPU-bound throughput", "Multithread throughput".
+    #[test]
+    fn cell_recommendation_weaknesses_bottom_2_alphabetical_tiebreak() {
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        axes.insert("channel_throughput", 50.0);
+        axes.insert("cpu_bound_throughput", 5.0); // tied bottom
+        axes.insert("image_size_efficiency", 50.0);
+        axes.insert("memory_fragmentation", 50.0);
+        axes.insert("multithread_throughput", 5.0); // tied bottom
+        axes.insert("resilience", 50.0);
+        axes.insert("security_posture", 50.0);
+        axes.insert("web_throughput", 50.0);
+        let out = derive_weaknesses(&axes);
+        assert_eq!(
+            out,
+            vec!["CPU-bound throughput", "Multithread throughput"],
+            "tied bottoms break alphabetically on axis_key"
+        );
+    }
+
+    /// REC-01 helper: `format_tldr` produces exactly the locked single
+    /// sentence shape: `"{alloc}/{env} \u{2014} strong on {top_strength}, weak on {bottom_weakness}."`.
+    /// Em-dash glyph U+2014 (matches recommend.rs:144 / line 205 existing
+    /// usage). Trailing period; comma between strong/weak. Strengths use
+    /// LABELS (e.g. "CPU-bound throughput") not keys.
+    #[test]
+    fn cell_recommendation_tldr_is_templated_one_sentence() {
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        axes.insert("channel_throughput", 50.0);
+        axes.insert("cpu_bound_throughput", 95.0); // top strength
+        axes.insert("image_size_efficiency", 50.0);
+        axes.insert("memory_fragmentation", 5.0); // bottom weakness
+        axes.insert("multithread_throughput", 50.0);
+        axes.insert("resilience", 50.0);
+        axes.insert("security_posture", 50.0);
+        axes.insert("web_throughput", 50.0);
+        let strengths = derive_strengths(&axes);
+        let weaknesses = derive_weaknesses(&axes);
+        let out = format_tldr("jemalloc", "alpine", &strengths, &weaknesses);
+        assert_eq!(
+            out,
+            "jemalloc/alpine \u{2014} strong on CPU-bound throughput, weak on Memory / fragmentation."
+        );
+    }
+
+    /// REC-01 helper: `cell_is_suspect` returns true when ANY run in the
+    /// cell trips the v1.0 `is_suspect` threshold (samples_count < 1_000 OR
+    /// warmup_duration_s < 5.0). Mirrors the existing recommend_for_class
+    /// suspect-suffix aggregation pattern at line 177.
+    ///
+    /// Iterator-form invocation (`runs.iter()`) exercises the generic
+    /// `IntoIterator<Item = &Run>` signature locked in the plan interfaces.
+    #[test]
+    fn cell_recommendation_suspect_flag_true_when_any_run_suspect() {
+        let runs = vec![
+            // jemalloc-cpu-bound on alpine: low samples (500 < 1_000) → suspect.
+            synth_run("jemalloc", "cpu-bound", 100.0, 500, 5.0),
+            // jemalloc-web on alpine: healthy.
+            synth_run("jemalloc", "web", 1500.0, 50_000, 5.0),
+        ];
+        // Iterator form (yields &Run).
+        assert!(cell_is_suspect(runs.iter()));
+        // Slice form (also satisfies the bound).
+        assert!(cell_is_suspect(&runs[..]));
+    }
+
+    /// REC-01 helper: `cell_is_suspect` returns false when ALL runs in the
+    /// cell are healthy (samples ≥ 1_000 AND warmup ≥ 5.0).
+    #[test]
+    fn cell_recommendation_suspect_flag_false_when_all_runs_healthy() {
+        let runs = vec![
+            synth_run("jemalloc", "cpu-bound", 100.0, 50_000, 5.0),
+            synth_run("jemalloc", "web", 1500.0, 50_000, 5.0),
+        ];
+        assert!(!cell_is_suspect(runs.iter()));
+        assert!(!cell_is_suspect(&runs[..]));
+    }
 }
