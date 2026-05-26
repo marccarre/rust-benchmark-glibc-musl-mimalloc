@@ -1,71 +1,100 @@
 {
+  "version": "1.0",
   "schema_version": 1,
-  "generated_at": "2026-05-26T11:25:27.218Z",
+  "timestamp": "2026-05-27T15:06:26.607Z",
+  "generated_at": "2026-05-27T15:06:26.607Z",
   "context": "phase",
   "milestone": "v1.1",
   "milestone_name": "Recommendations, Spider Charts & Direction Markers",
   "phase": "07",
   "phase_name": "Scoring & Top-N",
+  "phase_dir": ".planning/phases/07-scoring-top-n",
+  "plan": null,
+  "task": null,
+  "total_tasks": 4,
   "status": "paused",
-  "stopped_at": "context exhaustion at 79% (2026-05-26)",
+  "stopped_at": "context warning at 67% during plan checker revision loop (2026-05-27)",
   "branch": "main",
-  "head_commit": "a7d59f5",
-  "head_subject": "docs(07): capture phase context",
+  "head_commit": "ab46846",
+  "head_subject": "wip: phase-07 paused at discuss-complete (CONTEXT ready, planning not started)",
   "completed_tasks": [
-    "Phase 6 Foundations fully shipped: 06-01 axes.rs registry (8 axes, Direction enum, arrow() helper), 06-02 security loader + 6 sidecars + --security CLI flag, 06-03 frozen-schema gate (SHA-256 pin in alloc-bench-core/tests/smoke.rs)",
-    "Phase 6 verifier agent: PASS verdict, all 6 requirements covered, no debt, no scope creep",
-    "Phase 6 worktrees cleaned, all 8 commits cherry-picked to main in plan order (linear history)",
-    "Phase 7 discuss-phase: 4 gray areas resolved (heuristic weights, winsorization fallback, suspect-flag propagation, per-cell prose source)",
-    "Phase 7 CONTEXT.md committed (a7d59f5): locked decisions for SCORE-01..04, REC-01, REC-02, TEST-03..05",
-    "STATE.md updated to reflect Phase 6 complete (50% milestone progress)"
+    {"id": 1, "name": "Phase 7 research (07-RESEARCH.md, 488 lines)", "status": "done", "commit": null, "notes": "Dry-run verdict: V12-04 TODO NOT needed (all 8 axes >= 6 distinct scores at N=18). Discovered existing recommendations() test count is 10, not 13."},
+    {"id": 2, "name": "Phase 7 planner (07-01-PLAN.md + 07-02-PLAN.md)", "status": "done", "commit": null, "notes": "2 plans, 2 waves: Plan 01 score.rs data-only (SCORE-01..04, TEST-04, TEST-05); Plan 02 recommend.rs prose-aware (REC-01, REC-02, TEST-03)."},
+    {"id": 3, "name": "Plan checker (07-PLAN-CHECK.md)", "status": "done", "commit": null, "notes": "Verdict NEEDS_REVISION: 2 blockers (B-01 verify-regex permits off-by-one; B-02 cell_is_suspect signature thrash) + 4 warnings. All 12 substantive questions PASS."},
+    {"id": 4, "name": "Plan revisions (B-01, B-02, W-03, W-04 part 1)", "status": "in_progress", "progress": "Applied: B-01 (Plan 01 Task 1 regex 6|7 -> 7), B-02 (cell_is_suspect generic IntoIterator signature lifted into Task 1 of Plan 02; Task 2 thrash step removed; renumbered Step 6 -> Step 5), W-03 (cross-reference doc comment for score.rs::env_short_name in Plan 01 Step 1), W-04 part 1 (Plan 01 Task 2 regex 1[2-9]|2[0-9] -> 15). Remaining: W-01 wording cleanup, W-02 promote losers_by_class to acceptance, W-04 part 2 (Plan 02 Task 1 regex 1[6-9]|2[0-9] -> 16, Task 2 regex 2[1-9]|3[0-9] -> 21)."}
   ],
   "remaining_tasks": [
-    "Phase 7 plan-phase: spawn researcher (opus) -> planner (opus) -> checker (sonnet); produce RESEARCH.md and PLAN files",
-    "Phase 7 execute-phase: implement score.rs (data-only) + recommend.rs::top_n_cells (prose-aware) + tests",
-    "Phase 8 Per-cell Artifacts: discuss -> plan -> execute (5 reqs, depends on Phase 7)",
-    "Phase 9 Spider Chart: discuss -> plan -> execute (5 reqs, depends on Phase 6 + Phase 7)",
-    "Phase 10 Direction Markers: discuss -> plan -> execute (5 reqs, depends on Phase 6)",
-    "Phase 11 Golden-fixture Regen: discuss -> plan -> execute (2 reqs, depends on Phase 10; standalone PR)",
-    "Milestone v1.1 lifecycle: audit -> complete -> cleanup"
+    {"id": 5, "name": "Apply remaining 3 minor warnings (W-01, W-02, W-04 part 2)", "status": "not_started"},
+    {"id": 6, "name": "Re-run plan checker; iterate until PASS", "status": "not_started"},
+    {"id": 7, "name": "Commit RESEARCH + PLAN files (one commit per plan)", "status": "not_started"},
+    {"id": 8, "name": "Phase 7 execute-phase (Wave 1: Plan 01 score.rs; Wave 2: Plan 02 recommend.rs extension)", "status": "not_started"},
+    {"id": 9, "name": "Phase 7 verify-phase (gsd-verifier)", "status": "not_started"},
+    {"id": 10, "name": "Phases 8-11 (autonomous mode continues)", "status": "not_started"},
+    {"id": 11, "name": "Milestone v1.1 lifecycle: audit -> complete -> cleanup", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "Skip retrying gsd-phase-researcher (had failed twice with API 500); use the successful retry verdict.", "rationale": "Research succeeded on third attempt; V12-04 TODO not needed (all axes >= 6 distinct scores at N=18).", "phase": "07"},
+    {"decision": "2 plans (not 3) for Phase 7", "rationale": "Module split is tight: Plan 01 score.rs data-only, Plan 02 recommend.rs prose-aware. Integration tests fold into Plan 02.", "phase": "07"},
+    {"decision": "cell_is_suspect uses generic IntoIterator<Item = &Run> from the start (Task 1)", "rationale": "Run does not derive Clone (v1 schema GUARD-01 frozen). Task 2's top_n_cells passes Vec<&Run> filtered borrow, so generic signature avoids cloning. Lifted into Task 1 to eliminate signature thrash mid-plan (B-02).", "phase": "07"}
+  ],
+  "uncommitted_files": [
+    ".planning/phases/07-scoring-top-n/07-RESEARCH.md",
+    ".planning/phases/07-scoring-top-n/07-01-PLAN.md",
+    ".planning/phases/07-scoring-top-n/07-02-PLAN.md",
+    ".planning/phases/07-scoring-top-n/07-PLAN-CHECK.md"
   ],
   "next_action": {
-    "command": "/gsd:plan-phase 7",
-    "why": "Phase 7 CONTEXT.md is committed; planner workflow spawns researcher -> planner -> checker and produces PLAN files for execution.",
+    "command": "Apply 3 remaining warnings (W-01, W-02, W-04 part 2) to 07-02-PLAN.md, then re-run gsd-plan-checker until PASS, then commit research + plans + check, then /gsd:execute-phase 7",
+    "why": "Phase 7 plans are substantively complete (all 12 checker questions PASS). Two blockers fixed; three minor warnings remain (wording / acceptance criterion / regex tightening). Plans are not yet committed — uncommitted on main at ab46846.",
     "expected_outputs": [
-      ".planning/phases/07-scoring-top-n/07-RESEARCH.md",
-      ".planning/phases/07-scoring-top-n/07-NN-PLAN.md (one or more)",
-      ".planning/phases/07-scoring-top-n/07-PLAN-CHECK.md"
+      "07-RESEARCH.md, 07-01-PLAN.md, 07-02-PLAN.md, 07-PLAN-CHECK.md committed",
+      ".planning/phases/07-scoring-top-n/07-01-SUMMARY.md (post-execute)",
+      ".planning/phases/07-scoring-top-n/07-02-SUMMARY.md (post-execute)",
+      "crates/alloc-bench-aggregator/src/score.rs (NEW)",
+      "crates/alloc-bench-aggregator/src/recommend.rs (extended)"
     ]
   },
   "phase_init_state": {
     "has_context": true,
-    "has_research": false,
-    "has_plans": false,
-    "plan_count": 0,
-    "phase_status": "Pending",
+    "has_research": true,
+    "has_plans": true,
+    "plan_count": 2,
+    "phase_status": "Plans drafted; checker passes substantively; 3 minor warnings to apply before commit",
     "phase_req_ids": "SCORE-01, SCORE-02, SCORE-03, SCORE-04, REC-01, REC-02, TEST-03, TEST-04, TEST-05",
     "researcher_model": "opus",
     "planner_model": "opus",
     "checker_model": "sonnet"
   },
   "phase_locked_decisions": {
-    "heuristic_weight_policy": "Equal 1/8 per axis ships as-is; V12-07 (cap at 12.5% aggregate) deferred to v1.2. Test heuristic_axes_cannot_promote_worst_measured_cell_to_top_1 defends worst case.",
-    "winsorization": "p10/p90 (not p5/p95 — collapses at N=18). Plan must include dry-run on tests/fixtures/multi-run-results/*.json; if any axis < 5 distinct scores, emit V12-04 TODO in score.rs::normalize_axis but ship p10/p90 unchanged.",
-    "per_cell_prose": "All five fields (tldr/strengths/weaknesses/recommended_for/avoid_for) axis-derived. Strengths=top-2 axes, weaknesses=bottom-2, recommended_for=existing recommendations() winners, avoid_for=bottom-2 across class rankings. tldr is templated 1-sentence.",
-    "suspect_flag": "Cell-level bool via OR aggregation across axes (any-axis-suspect promotes whole cell). Reuses v1.0 thresholds: samples_count<1000 OR warmup_duration_s<5.0.",
+    "heuristic_weight_policy": "Equal 1/8 per axis ships as-is; V12-07 (cap at 12.5% aggregate) deferred to v1.2.",
+    "winsorization": "p10/p90 (not p5/p95). RESEARCH dry-run verdict: V12-04 TODO NOT needed (all 8 axes >= 6 distinct scores at N=18 on production fixtures).",
+    "per_cell_prose": "All 5 fields axis-derived. Strengths=top-2 axes (alphabetical key tiebreak), weaknesses=bottom-2, recommended_for=existing recommendations() winners (re-implemented at (alloc, env) granularity via winners_by_class helper), avoid_for=bottom-2 across class rankings (losers_by_class). tldr template uses em-dash U+2014.",
+    "suspect_flag": "Cell-level bool via OR aggregation. Helper signature: cell_is_suspect<'a, I: IntoIterator<Item = &'a Run>>(cell_runs: I) -> bool — generic from Task 1 to avoid Run clone (v1 schema not Clone).",
     "top_n_constants": "TOP_N_SPIDER=3, TOP_N_TABLE=5, TOP_N_TOTAL=10. Single source of truth in recommend.rs.",
-    "module_split": "score.rs (data-only: normalize_axis, compute_axes, score_cells, top_n) and recommend.rs::top_n_cells (prose-aware) are separate. Existing 13 recommendations() tests untouched."
+    "module_split": "score.rs (data-only) and recommend.rs::top_n_cells (prose-aware) are separate. Existing 10 winner_picker_* tests UNTOUCHED (research corrected count from 13 to 10).",
+    "existing_test_count": 10
   },
   "verification_state": {
-    "workspace_tests": "174 passing on main",
+    "workspace_tests": "174 passing on main (Phase 6 baseline; Phase 7 not yet executed)",
     "output_rs_locked": true,
     "frozen_schema_sha256": "1bcfb91252eddc2710222abd46b031b85d91267d97a0874fa78d042c15f99a84",
-    "uncommitted_files": [],
+    "uncommitted_files": [
+      ".planning/phases/07-scoring-top-n/07-RESEARCH.md",
+      ".planning/phases/07-scoring-top-n/07-01-PLAN.md",
+      ".planning/phases/07-scoring-top-n/07-02-PLAN.md",
+      ".planning/phases/07-scoring-top-n/07-PLAN-CHECK.md"
+    ],
     "outstanding_worktrees": []
   },
+  "context_notes": "Two prior researcher attempts in earlier session failed with API 500. Third attempt (this session) succeeded with full RESEARCH.md. Planner produced 2 plans cleanly. Checker found 2 blockers + 4 warnings — all mechanical (regex, signature, wording). B-01, B-02, W-03, W-04 part 1 already fixed in working tree. W-01, W-02, W-04 part 2 are line-level edits remaining. Pausing because context hit 67% during the iteration; plans are not yet committed and execute-phase has not started.",
   "resume_protocol": {
-    "step_1": "Read .planning/STATE.md and .planning/phases/07-scoring-top-n/07-CONTEXT.md to refresh phase context",
-    "step_2": "Run /gsd:plan-phase 7 (or /gsd-autonomous --from 7 to resume autonomous mode)",
-    "step_3": "Plan-phase will detect existing CONTEXT.md and skip discuss-phase, jumping straight to research"
+    "step_1": "Read .planning/HANDOFF.json + .planning/phases/07-scoring-top-n/.continue-here.md + 07-PLAN-CHECK.md to refresh context",
+    "step_2": "Apply 3 remaining warnings to 07-02-PLAN.md: W-01 (Task 2 line ~290 'recommended_for' wording), W-02 (Task 2 acceptance criterion for losers_by_class bottom-2), W-04 part 2 (Plan 02 Task 1 regex -> 16, Task 2 regex -> 21)",
+    "step_3": "Re-run gsd-plan-checker; iterate until PASS",
+    "step_4": "Commit research + plans + check (3-4 commits or 1 batched per project convention)",
+    "step_5": "/gsd:execute-phase 7 (Wave 1: Plan 01 score.rs; Wave 2: Plan 02 recommend.rs extension)",
+    "step_6": "/gsd-autonomous --from 8 to continue remaining phases (or step into Phase 8 manually)"
   }
 }
