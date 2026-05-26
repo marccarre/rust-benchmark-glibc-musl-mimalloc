@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
-status: paused
-stopped_at: "context at 66% after Wave 1 merge (2026-05-27); clean handoff before Wave 2"
-last_updated: "2026-05-27T00:00:00Z"
-last_activity: 2026-05-27 -- Phase 07 Wave 1 (Plan 07-01) complete; 1 of 2 plans done
+status: executing
+stopped_at: context exhaustion at 79% (2026-05-26)
+last_updated: "2026-05-26T20:35:07.540Z"
+last_activity: 2026-05-26 -- Phase 07 execution started
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 14
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-17)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** Phase 07 — scoring-top-n
+**Current focus:** Phase 07 — Scoring & Top-N
 
 ## Current Position
 
-Phase: 07 (scoring-top-n) — PAUSED after Wave 1
-Plan: 1 of 2 (Plan 07-01 complete; Plan 07-02 pending)
-Status: Paused — Plan 07-01 merged to main, Wave 2 (Plan 07-02) not started
-Last activity: 2026-05-27 -- Phase 07 Wave 1 (Plan 07-01) complete; 1 of 2 plans done
+Phase: 07 (Scoring & Top-N) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 07
+Last activity: 2026-05-26 -- Phase 07 execution started
 
 **Resume:** `/clear` then `/gsd:autonomous --from 7` — SDK detects Plan 07-01 complete (07-01-SUMMARY.md exists), picks up at Plan 07-02 (recommend.rs prose-aware layer).
 
