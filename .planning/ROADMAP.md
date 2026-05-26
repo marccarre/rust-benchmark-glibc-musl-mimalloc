@@ -173,7 +173,7 @@ Plans:
 | 5. CI, Image-Size Gate & Public Polish | v1.0 | 4/4 | Complete | 2026-05-19 |
 | 5.1. UAT Gap Closure | post-v1.0 | 2/2 | Complete   | 2026-05-22 |
 | 6. Foundations | v1.1 | 0/3 | Not started | - |
-| 7. Scoring & Top-N | v1.1 | 0/? | Not started | - |
+| 7. Scoring & Top-N | v1.1 | 1/2 | In Progress|  |
 | 8. Per-cell Artifacts | v1.1 | 0/? | Not started | - |
 | 9. Spider Chart | v1.1 | 0/? | Not started | - |
 | 10. Direction Markers | v1.1 | 0/? | Not started | - |
