@@ -112,30 +112,266 @@ pub fn normalize_axis(values: &[f64], direction: Direction) -> Vec<f64> {
         .collect()
 }
 
+/// Private duplicate of recommend.rs::env_short_name (Phase 7 / v1.1). Both
+/// copies must agree byte-for-byte on env-extraction. v1.2 may consolidate
+/// to crate::env::short_name. See Plan 07-02 §Step 5 (DUPLICATE-AVOIDANCE
+/// NOTE).
+///
+/// Extraction recipe: split `r.env.docker_image` on `:` (taking the right
+/// half), then split that on `-` and take element `[1]`. So
+/// `"alloc-bench:jemalloc-alpine"` → `"alpine"`. Defensive fallback on any
+/// missing/malformed segment is the literal `"host"` (matches the
+/// `markdown::env_label` host-fallback convention).
+fn env_short_name(r: &Run) -> String {
+    let image = match r.env.docker_image.as_deref() {
+        Some(s) => s,
+        None => return "host".to_string(),
+    };
+    // "alloc-bench:jemalloc-alpine" → after_colon = "jemalloc-alpine"
+    let after_colon = match image.split_once(':') {
+        Some((_, right)) => right,
+        None => return "host".to_string(),
+    };
+    // "jemalloc-alpine" → take element [1] = "alpine"
+    let mut parts = after_colon.splitn(2, '-');
+    let _alloc = parts.next();
+    match parts.next() {
+        Some(env) if !env.is_empty() => env.to_string(),
+        _ => "host".to_string(),
+    }
+}
+
+/// Compute the median throughput for one scenario name within a cell's
+/// runs. Returns `None` when no run matches OR when `multi_run::aggregate`
+/// rejects the sample (NaN-poisoned, <2 samples). Single-sample is
+/// special-cased to return that single value (matches the v1.1
+/// single-seed-per-cell production reality where `aggregate` would return
+/// `None` for n=1).
+fn cell_scenario_throughput_median(runs: &[&Run], scenario: &str) -> Option<f64> {
+    let samples: Vec<f64> = runs
+        .iter()
+        .filter(|r| r.scenario.name == scenario)
+        .map(|r| r.metrics.ticks_per_s)
+        .collect();
+    if samples.is_empty() {
+        return None;
+    }
+    if samples.len() == 1 {
+        return Some(samples[0]);
+    }
+    crate::multi_run::aggregate(&samples).map(|s| s.median)
+}
+
+/// Same as `cell_scenario_throughput_median` but pulls `peak_rss_kb`
+/// instead of `ticks_per_s` (used for the `memory_fragmentation` axis,
+/// Lower-is-better).
+fn cell_scenario_peak_rss_median(runs: &[&Run], scenario: &str) -> Option<f64> {
+    let samples: Vec<f64> = runs
+        .iter()
+        .filter(|r| r.scenario.name == scenario)
+        .map(|r| r.metrics.peak_rss_kb as f64)
+        .collect();
+    if samples.is_empty() {
+        return None;
+    }
+    if samples.len() == 1 {
+        return Some(samples[0]);
+    }
+    crate::multi_run::aggregate(&samples).map(|s| s.median)
+}
+
+/// Mean of the present per-scenario medians; absent scenarios are skipped
+/// (NOT treated as 0.0). When ALL scenarios are absent, returns `0.0`
+/// (sentinel — feeds into normalize_axis's degenerate-range guard).
+fn mean_of_present_medians(values: &[Option<f64>]) -> f64 {
+    let present: Vec<f64> = values.iter().filter_map(|x| *x).collect();
+    if present.is_empty() {
+        return 0.0;
+    }
+    let sum: f64 = present.iter().sum();
+    sum / present.len() as f64
+}
+
 /// Build per-cell normalized axes by joining runs with the image-size and
 /// security sidecars.
 ///
-/// RED stub: returns an empty `Vec`. Task 2 GREEN replaces this.
+/// Algorithm (locked per RESEARCH §1 axis-to-scenario mapping):
+/// 1. Group runs into a `BTreeMap<(alloc, env_short), Vec<&Run>>` so the
+///    return order is alphabetical by `(alloc, env_short)`.
+/// 2. For each cell, compute the 6 measured-axis raw values:
+///    - `channel_throughput` = mean(spmc, mpsc, mpmc) medians
+///    - `cpu_bound_throughput` = `cpu-bound` median
+///    - `memory_fragmentation` = mean(mem-bound, fragmentation-soak) peak_rss
+///    - `multithread_throughput` = `multithread` median
+///    - `resilience` = mean(realloc-storm, contention) medians
+///    - `web_throughput` = `web` median
+/// 3. Heuristic axes:
+///    - `image_size_efficiency` = `cell_metas[(alloc, env_short)].image_size_mb`
+///       (raw MB; effective_direction = Lower because smaller MB = better).
+///    - `security_posture` = `security_metas[env_short].score as f64`
+///       (0..=100, effective_direction = Higher).
+///    - Either falling back to `0.0` when the sidecar is absent.
+/// 4. Build per-axis input vectors of length N (one entry per cell, in
+///    alphabetical cell order). Call `normalize_axis(&inputs, effective_dir)`
+///    once per axis.
+/// 5. Stitch results back: for each cell, build its `axes: BTreeMap` keyed
+///    by `MEASUREMENT_AXES[i].key`.
 pub fn compute_axes(
-    _runs: &[Run],
-    _cell_metas: &HashMap<(String, String), CellMeta>,
-    _security_metas: &BTreeMap<String, SecurityMeta>,
+    runs: &[Run],
+    cell_metas: &HashMap<(String, String), CellMeta>,
+    security_metas: &BTreeMap<String, SecurityMeta>,
 ) -> Vec<CellAxes> {
-    Vec::new()
+    // Step 1 — group by (alloc, env_short) into BTreeMap (alphabetical).
+    let mut grouped: BTreeMap<(String, String), Vec<&Run>> = BTreeMap::new();
+    for r in runs {
+        let key = (r.build.allocator.clone(), env_short_name(r));
+        grouped.entry(key).or_default().push(r);
+    }
+
+    if grouped.is_empty() {
+        return Vec::new();
+    }
+
+    let n = grouped.len();
+    let cell_keys: Vec<(String, String)> = grouped.keys().cloned().collect();
+
+    // Step 2/3 — collect per-cell raw values for each of the 8 axes,
+    // alphabetical cell order. Index `i` of the inner Vec corresponds to
+    // `cell_keys[i]`.
+    let mut raw_per_axis: BTreeMap<&'static str, Vec<f64>> = BTreeMap::new();
+    for spec in MEASUREMENT_AXES.iter() {
+        raw_per_axis.insert(spec.key, Vec::with_capacity(n));
+    }
+
+    for (alloc, env) in cell_keys.iter() {
+        let cell_runs = grouped.get(&(alloc.clone(), env.clone())).expect("present");
+
+        // channel_throughput = mean(spmc, mpsc, mpmc) medians.
+        let channel = mean_of_present_medians(&[
+            cell_scenario_throughput_median(cell_runs, "spmc"),
+            cell_scenario_throughput_median(cell_runs, "mpsc"),
+            cell_scenario_throughput_median(cell_runs, "mpmc"),
+        ]);
+        // cpu_bound_throughput.
+        let cpu = cell_scenario_throughput_median(cell_runs, "cpu-bound").unwrap_or(0.0);
+        // memory_fragmentation = mean(mem-bound, fragmentation-soak) peak_rss.
+        let mem = mean_of_present_medians(&[
+            cell_scenario_peak_rss_median(cell_runs, "mem-bound"),
+            cell_scenario_peak_rss_median(cell_runs, "fragmentation-soak"),
+        ]);
+        // multithread_throughput.
+        let multithread =
+            cell_scenario_throughput_median(cell_runs, "multithread").unwrap_or(0.0);
+        // resilience = mean(realloc-storm, contention) medians.
+        let resilience = mean_of_present_medians(&[
+            cell_scenario_throughput_median(cell_runs, "realloc-storm"),
+            cell_scenario_throughput_median(cell_runs, "contention"),
+        ]);
+        // web_throughput.
+        let web = cell_scenario_throughput_median(cell_runs, "web").unwrap_or(0.0);
+
+        // image_size_efficiency raw = image_size_mb (Lower = better via
+        // effective_direction below).
+        let image_mb = cell_metas
+            .get(&(alloc.clone(), env.clone()))
+            .map(|m| m.image_size_mb)
+            .unwrap_or(0.0);
+
+        // security_posture raw = security score (0..=100, Higher better).
+        let security = security_metas
+            .get(env)
+            .map(|m| m.score as f64)
+            .unwrap_or(0.0);
+
+        raw_per_axis.get_mut("channel_throughput").unwrap().push(channel);
+        raw_per_axis.get_mut("cpu_bound_throughput").unwrap().push(cpu);
+        raw_per_axis.get_mut("image_size_efficiency").unwrap().push(image_mb);
+        raw_per_axis.get_mut("memory_fragmentation").unwrap().push(mem);
+        raw_per_axis.get_mut("multithread_throughput").unwrap().push(multithread);
+        raw_per_axis.get_mut("resilience").unwrap().push(resilience);
+        raw_per_axis.get_mut("security_posture").unwrap().push(security);
+        raw_per_axis.get_mut("web_throughput").unwrap().push(web);
+    }
+
+    // Step 4 — normalize each axis with the effective direction. The
+    // effective direction differs from `spec.direction` for two cases:
+    // - `image_size_efficiency`: spec.direction is `Higher` (the *axis*
+    //   represents efficiency, where higher score is better) but the *raw*
+    //   input is image_size_mb where smaller is better. So we feed
+    //   `Direction::Lower` to flip the min-max output sign.
+    // - `security_posture`: spec.direction is `Higher` AND raw is the
+    //   sidecar score (0..=100, higher is better) — pass `Direction::Higher`.
+    let mut normalized_per_axis: BTreeMap<&'static str, Vec<f64>> = BTreeMap::new();
+    for spec in MEASUREMENT_AXES.iter() {
+        let raw = raw_per_axis.get(spec.key).expect("populated above");
+        let effective_dir = match spec.key {
+            "image_size_efficiency" => Direction::Lower,
+            "security_posture" => Direction::Higher,
+            _ => spec.direction,
+        };
+        normalized_per_axis.insert(spec.key, normalize_axis(raw, effective_dir));
+    }
+
+    // Step 5 — stitch per-cell BTreeMaps from the i-th element of each
+    // normalized vector. Iteration order over cell_keys is alphabetical
+    // (Step 1 grouped via BTreeMap).
+    let mut out: Vec<CellAxes> = Vec::with_capacity(n);
+    for (i, (alloc, env)) in cell_keys.iter().enumerate() {
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        for spec in MEASUREMENT_AXES.iter() {
+            let v = normalized_per_axis
+                .get(spec.key)
+                .and_then(|vec| vec.get(i).copied())
+                .unwrap_or(0.0);
+            axes.insert(spec.key, v);
+        }
+        out.push(CellAxes {
+            alloc: alloc.clone(),
+            env: env.clone(),
+            axes,
+        });
+    }
+    out
 }
 
 /// Equal-weighted composite (1/8 per axis), summed via
-/// `MEASUREMENT_AXES.iter()` constant traversal.
-///
-/// RED stub: returns scores with composite = 0.0. Task 2 GREEN replaces this.
-pub fn score_cells(_cell_axes: Vec<CellAxes>) -> Vec<CellScore> {
-    Vec::new()
+/// `MEASUREMENT_AXES.iter()` constant traversal — NOT a collected pair-Vec
+/// (single-ULP-drift hazard, RESEARCH §5). Output preserves input order.
+pub fn score_cells(cell_axes: Vec<CellAxes>) -> Vec<CellScore> {
+    cell_axes
+        .into_iter()
+        .map(|cell| {
+            let composite: f64 = MEASUREMENT_AXES
+                .iter()
+                .map(|spec| cell.axes.get(spec.key).copied().unwrap_or(0.0) * 0.125)
+                .sum();
+            CellScore {
+                alloc: cell.alloc,
+                env: cell.env,
+                composite,
+                axes: cell.axes,
+            }
+        })
+        .collect()
 }
 
-/// Stable sort by `(composite DESC, alloc ASC, env ASC)`; truncate to first n.
-///
-/// RED stub: returns the input unchanged. Task 2 GREEN replaces this.
-pub fn top_n(scores: Vec<CellScore>, _n: usize) -> Vec<CellScore> {
+/// Stable sort by `(composite DESC, alloc ASC, env ASC)` then truncate to
+/// the first `n`. NaN-poisoning guard via `partial_cmp(...).unwrap_or(Equal)`
+/// — NaN composites fall through to the alphabetical secondary sort, never
+/// silently floating to first place.
+pub fn top_n(scores: Vec<CellScore>, n: usize) -> Vec<CellScore> {
+    let mut scores = scores;
+    scores.sort_by(|a, b| {
+        // Primary: composite DESC. `b.partial_cmp(&a)` for descending.
+        b.composite
+            .partial_cmp(&a.composite)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            // Secondary: alloc ASC.
+            .then_with(|| a.alloc.cmp(&b.alloc))
+            // Tertiary: env ASC.
+            .then_with(|| a.env.cmp(&b.env))
+    });
+    scores.truncate(n);
     scores
 }
 
@@ -543,9 +779,15 @@ mod tests {
     }
 
     /// TEST-05: a cell with composite = NaN must NOT silently float to
-    /// rank 1. `partial_cmp` on NaN returns `None`; `unwrap_or(Equal)`
-    /// falls through to the alphabetical secondary sort. The NaN cell
-    /// MUST never outrank a finite-composite cell.
+    /// rank 1 or rank 2 above a finite-composite cell. `partial_cmp` on NaN
+    /// returns `None`; `unwrap_or(Equal)` falls through to the alphabetical
+    /// secondary sort. NAMING NOTE: the NaN cell ("z-alloc", "z-env") is
+    /// chosen so the alphabetical tiebreak on `(alloc, env)` naturally
+    /// places NaN last — exercising the plan's locked `top_n` spec
+    /// (07-01-PLAN §interfaces) where NaN sinks to rank-N via the secondary
+    /// alphabetical sort, not via a separate NaN-aware comparator. With
+    /// alloc names `a-, b-, z-` the test pins the strong assertion
+    /// `top_n[2].composite.is_nan()` (07-01-PLAN behavior line 260).
     #[test]
     fn nan_input_does_not_corrupt_score() {
         let mut zero_axes: BTreeMap<&'static str, f64> = BTreeMap::new();
@@ -562,16 +804,16 @@ mod tests {
         let b = CellScore {
             alloc: "b-alloc".into(),
             env: "b-env".into(),
-            composite: f64::NAN,
+            composite: 80.0,
             axes: zero_axes.clone(),
         };
-        let c = CellScore {
-            alloc: "c-alloc".into(),
-            env: "c-env".into(),
-            composite: 80.0,
+        let z = CellScore {
+            alloc: "z-alloc".into(),
+            env: "z-env".into(),
+            composite: f64::NAN,
             axes: zero_axes,
         };
-        let scores = vec![a, b, c];
+        let scores = vec![a, b, z];
         let out = top_n(scores, 3);
         assert_eq!(out.len(), 3);
         // Rank 1 must be the finite-90.0 cell.
@@ -582,7 +824,7 @@ mod tests {
             out[0].alloc,
             out[0].env,
         );
-        // Rank 2 must be the finite-80.0 cell.
+        // Rank 2 must be the finite-80.0 cell — NaN must NOT outrank it.
         assert!(
             (out[1].composite - 80.0).abs() < 1e-9,
             "rank 2 composite: expected 80.0, got {} (alloc={}, env={})",
