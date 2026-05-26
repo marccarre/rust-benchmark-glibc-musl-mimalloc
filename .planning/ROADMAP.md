@@ -28,7 +28,11 @@ Phase numbering continues from v1.0 (last phase = 5; surgical patch = 5.1) → v
   2. User runs `just aggregate --security 'meta/security/*.json'` and the aggregator loads six hand-curated `meta/security/{env}.json` sidecars (alpine, debian-slim, distroless-cc, distroless-static, scratch, wolfi) via `loader::load_security_metas()` returning `BTreeMap<String, SecurityMeta>` (NOT `HashMap`)
   3. User runs `just aggregate` without `--security` and the aggregator falls back to `score = 0` with em-dash tooltip in the security axis (mirrors v1.0 docker_runtimes em-dash convention)
   4. User runs `cargo test smoke::tests::v1_schema_output_rs_is_frozen` and the test pins a SHA-256 of `crates/alloc-bench-core/src/output.rs` to its v1.0 freeze — guards against accidental v1 schema mutation
-**Plans:** TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 06-01-PLAN.md — `axes.rs` registry + Direction enum + arrow() helper (AXES-01, AXES-02)
+- [ ] 06-02-PLAN.md — Security loader (`SecurityMeta` + `load_security_metas`) + `--security` CLI flag + 6 committed sidecars (SEC-01, SEC-02, SEC-03)
+- [ ] 06-03-PLAN.md — Frozen-schema gate (`smoke::tests::v1_schema_output_rs_is_frozen` + `sha2` dev-dep) (GUARD-01)
 **Open Questions** (defer to `/gsd:plan-phase 6`):
   - `--security` flag default value: empty string (matches `--meta` ergonomics, preserves byte-identical output when absent) vs. `meta/security/*.json` glob (richer dashboard out of the box). Recommend empty string per Phase-5 D-13 precedent.
   - Empty-pattern fallback for the security axis when `meta/security/*.json` is absent: render `score = 0` with em-dash tooltip vs. drop the axis entirely (8 → 7). Recommend em-dash fallback for byte-identical-output preservation and stable 8-axis spider shape.
@@ -139,7 +143,7 @@ Plans:
 | 4. Aggregator & Dashboard | v1.0 | 3/3 | Complete | 2026-05-19 |
 | 5. CI, Image-Size Gate & Public Polish | v1.0 | 4/4 | Complete | 2026-05-19 |
 | 5.1. UAT Gap Closure | post-v1.0 | 2/2 | Complete   | 2026-05-22 |
-| 6. Foundations | v1.1 | 0/? | Not started | - |
+| 6. Foundations | v1.1 | 0/3 | Not started | - |
 | 7. Scoring & Top-N | v1.1 | 0/? | Not started | - |
 | 8. Per-cell Artifacts | v1.1 | 0/? | Not started | - |
 | 9. Spider Chart | v1.1 | 0/? | Not started | - |
