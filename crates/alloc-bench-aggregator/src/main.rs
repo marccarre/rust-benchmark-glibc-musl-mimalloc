@@ -25,6 +25,7 @@ mod loader;
 mod markdown;
 mod multi_run;
 mod recommend;
+mod score;
 
 use anyhow::{Context, Result};
 use clap::Parser;
