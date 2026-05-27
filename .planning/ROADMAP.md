@@ -86,11 +86,11 @@ Plans:
 
 **Wave 1**
 
-- [ ] 08-01-PLAN.md — recommend-cell.{md,html}.tmpl + CellTemplateContext + WR-01 sentinel test (CELL-01, CELL-02, CELL-05)
+- [x] 08-01-PLAN.md — recommend-cell.{md,html}.tmpl + CellTemplateContext + WR-01 sentinel test (CELL-01, CELL-02, CELL-05) ✓ 2026-05-27
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 08-02-PLAN.md — main.rs wiring + emit_top_n_cells + index.html.tmpl <section> + per-cell .md/.html fragment writes (CELL-03, CELL-04, CELL-05)
+- [x] 08-02-PLAN.md — main.rs wiring + emit_top_n_cells + index.html.tmpl <section> + per-cell .md/.html fragment writes (CELL-03, CELL-04, CELL-05) ✓ 2026-05-27
 
 ### Phase 9: Spider Chart
 
