@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-27T20:45:37.654Z",
+  "timestamp": "2026-05-27T21:30:58Z",
   "phase": "09",
   "phase_name": "Spider Chart",
   "phase_dir": ".planning/phases/09-spider-chart",
@@ -12,13 +12,13 @@
     {"id": "discuss-phase", "name": "Smart discuss — 26 locked decisions", "status": "done", "commit": "ee7934f"},
     {"id": "ui-phase", "name": "UI design contract (UI-SPEC.md)", "status": "done", "commit": "46748d6"},
     {"id": "research", "name": "RESEARCH.md — polar.rs API, scatterpolar shape, Pareto algorithm", "status": "done", "commit": "323f9d2"},
-    {"id": "pattern-mapping", "name": "PATTERNS.md — analog files + disambiguation", "status": "done", "commit": null},
-    {"id": "planning", "name": "3 PLAN.md files written (09-01 polar.rs / 09-02 pareto+CellRecommendation / 09-03 HTML wiring)", "status": "done", "commit": null},
+    {"id": "pattern-mapping", "name": "PATTERNS.md — analog files + disambiguation", "status": "done", "commit": "0fcc880"},
+    {"id": "planning", "name": "3 PLAN.md files written (09-01 polar.rs / 09-02 pareto+CellRecommendation / 09-03 HTML wiring)", "status": "done", "commit": "0fcc880"},
     {"id": "plan-checker", "name": "Plan checker reviewed: 1 false-positive blocker (Nyquist gate fired despite nyquist_validation:false), 4 warnings", "status": "done", "commit": null},
-    {"id": "checker-fixes", "name": "2 surgical fixes applied to plans (09-02 self-contradicting acceptance criterion reworded; 09-03 tickfont.color #222 -> #666 per RESEARCH §2)", "status": "done", "commit": null}
+    {"id": "checker-fixes", "name": "2 surgical fixes applied to plans (09-02 self-contradicting acceptance criterion reworded; 09-03 tickfont.color #222 -> #666 per RESEARCH §2)", "status": "done", "commit": "0fcc880"},
+    {"id": "commit-plans", "name": "Plan artifacts + Phase 8 VERIFICATION.md + pause-work handoff committed (3 commits: 28b244c, 0fcc880, f04047b)", "status": "done", "commit": "f04047b"}
   ],
   "remaining_tasks": [
-    {"id": "commit-plans", "name": "Commit Phase 9 plans + PATTERNS.md + ROADMAP.md annotations + STATE.md", "status": "not_started"},
     {"id": "execute-phase-09", "name": "Execute Phase 9 (Wave 1: 09-01 || 09-02; Wave 2: 09-03)", "status": "not_started"},
     {"id": "code-review-09", "name": "Phase 9 code review + fix chain", "status": "not_started"},
     {"id": "verify-09", "name": "Phase 9 verifier (goal-backward analysis)", "status": "not_started"},
@@ -28,7 +28,7 @@
     {"id": "lifecycle", "name": "Milestone v1.1 lifecycle: audit → complete → cleanup", "status": "not_started"}
   ],
   "blockers": [
-    {"description": "gsd-phase-researcher hit 3 consecutive Internal server error failures (8m, 7m, 6m duration each) before a 4th budget-capped attempt succeeded. May recur on Phase 10's research pass.", "type": "external", "workaround": "Use a tightly tool-budgeted prompt (<=8 calls), prioritise grep over full Read, restrict web search to single hash lookups."}
+    {"description": "gsd-phase-researcher hit 3 consecutive Internal server error failures (8m, 7m, 6m duration each) before a 4th budget-capped attempt succeeded in the prior session. May recur on Phase 10's research pass.", "type": "external", "workaround": "Use a tightly tool-budgeted prompt (<=8 calls), prioritise grep over full Read, restrict web search to single hash lookups."}
   ],
   "human_actions_pending": [],
   "decisions": [
@@ -36,16 +36,10 @@
     {"decision": "Plan 09-03 layout angularaxis.tickfont.color flipped from #222 to #666", "rationale": "Plan-checker warning #4 — RESEARCH §2 locks #666 as the uniform muted tickfont colour for heuristic-axis visual distinction; original #222 would silently disable the locked compromise", "phase": "09"},
     {"decision": "Pareto-front routing applies to `## Top 10 cells` summary table + per-cell card templates (NOT the class-keyed `## Recommendations by workload`)", "rationale": "PATTERNS.md disambiguation: existing `Recommendation` struct lacks `(alloc, env)` fields, making Pareto annotation structurally impossible there; routing through `CellRecommendation::is_pareto` mirrors the suspect_flag pattern", "phase": "09"},
     {"decision": "Wave 1 plans (09-01 || 09-02) intentionally leave the workspace in a transitive build-broken state until Wave 2 (09-03) closes the loop", "rationale": "File-level parallelism trade-off — `top_n_cells` signature widens in 09-02 but call-sites are not yet rewired until 09-03; documented as Wave-1→Wave-2 handoff contract in 09-02 objective", "phase": "09"},
-    {"decision": "Plan-checker Dimension 8 / VALIDATION.md blocker is a false positive — Nyquist is globally disabled via workflow.nyquist_validation: false (no VALIDATION.md exists in any prior phase dir)", "rationale": "The checker's gate logic fired despite the global opt-out; treat as advisory and rely on the checker's own `Effective Verdict: VERIFICATION PASSED with 4 warnings`", "phase": "09"}
+    {"decision": "Plan-checker Dimension 8 / VALIDATION.md blocker is a false positive — Nyquist is globally disabled via workflow.nyquist_validation: false (no VALIDATION.md exists in any prior phase dir)", "rationale": "The checker's gate logic fired despite the global opt-out; treat as advisory and rely on the checker's own `Effective Verdict: VERIFICATION PASSED with 4 warnings`", "phase": "09"},
+    {"decision": "Pause at 66% context immediately before Wave 1 dispatch — STATE.md edit reverted, no worktrees spawned, no executor agents launched", "rationale": "Wave 1 dispatch alone is cheap, but the post-wave merge + post-merge build/test gate + Wave 2 executor + verifier + code-review chain would exhaust context mid-flight, potentially stranding worktree-* branches and orphaned manifests; cleaner to checkpoint at the wave boundary", "phase": "09"}
   ],
-  "uncommitted_files": [
-    ".planning/STATE.md",
-    ".planning/phases/08-per-cell-artifacts/VERIFICATION.md",
-    ".planning/phases/09-spider-chart/09-01-PLAN.md",
-    ".planning/phases/09-spider-chart/09-02-PLAN.md",
-    ".planning/phases/09-spider-chart/09-03-PLAN.md",
-    ".planning/phases/09-spider-chart/09-PATTERNS.md"
-  ],
-  "next_action": "Run /gsd:autonomous --from 9 in a fresh session. The workflow will detect the 3 PLAN.md files on disk, skip plan-phase, and proceed directly to commit + execute-phase. Wave 1 runs 09-01 (polar.rs) and 09-02 (pareto+CellRecommendation) in parallel; Wave 2 runs 09-03 (HTML wiring). Then code-review -> verify -> Phase 10 -> Phase 11 -> lifecycle.",
-  "context_notes": "Phase 9 plan-phase is essentially complete. Hit 75% context budget mid checker-fix application — paused at a clean boundary (between plan-phase and commit/execute). The two surgical fixes (Plan 09-02 wording, Plan 09-03 #666 colour) are the only revisions; the other 2 plan-checker warnings (heavy Plan 09-03 task count, build_trace+build_reference_trace API split vs RESEARCH §1 combined fn) were explicitly acknowledged-acceptable by the checker. Researcher reliability is the one outstanding session-level concern — three consecutive Internal server errors before a budget-capped retry succeeded, worth flagging if it recurs on Phase 10."
+  "uncommitted_files": [],
+  "next_action": "Run /gsd:autonomous --from 9 in a fresh session. The workflow will detect the 3 PLAN.md files on disk + no SUMMARY.md files + no production commits matching `09-0X` patterns, skip plan-phase entirely, and proceed directly to execute-phase. Wave 1 dispatches 09-01 (polar.rs) and 09-02 (pareto+CellRecommendation) in parallel worktrees (sequential dispatch with run_in_background=true to avoid .git/config.lock race); Wave 2 runs 09-03 (HTML wiring). Then code-review -> verify -> Phase 10 -> Phase 11 -> lifecycle.",
+  "context_notes": "Second consecutive context-exhaustion pause for Phase 9. Prior pause was at end of plan-phase (75% budget); this pause is at the boundary between commit-plans (done) and execute-phase (pending) at 66% budget. The execute-phase orchestrator overhead is non-trivial: each Agent() spawn for an executor + the post-wave merge + post-merge build/test + worktree cleanup loop accumulates ~5-8% per wave, so spawning 3 plans + verifier + code-reviewer in one session is the wrong shape. Resume should give a clean slate to execute-phase. The fresh resume will re-run init.execute-phase, re-discover plans (no summaries -> all 3 incomplete), re-create the wave manifest, and dispatch Wave 1 cleanly. Safe-resume gate will pass — no SUMMARY.md exists for any of 09-0{1,2,3}, and the only commits matching `09-0X` patterns are the docs commit `0fcc880` (plan artifacts), not production code."
 }
