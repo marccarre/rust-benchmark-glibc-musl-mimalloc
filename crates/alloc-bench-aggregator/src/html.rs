@@ -417,6 +417,150 @@ mod tests {
             .expect("template should compile — missed `\\{` escape?");
     }
 
+    /// Phase 8 / Plan 01 — compile gate for the per-cell templates. Mirrors
+    /// `tinytemplate_compiles_index_template`: registers both `.tmpl` files
+    /// against a fresh `TinyTemplate` instance and fails at `cargo test`
+    /// time on a missed `\{` escape or unbalanced `{{for}}` / `{{if}}` block.
+    #[test]
+    fn tinytemplate_compiles_recommend_cell_templates() {
+        let mut tt = TinyTemplate::new();
+        tt.add_template("recommend-cell-md", RECOMMEND_CELL_MD)
+            .expect("recommend-cell.md.tmpl should compile — missed `\\{` escape or `{{endfor}}`?");
+        tt.add_template("recommend-cell-html", RECOMMEND_CELL_HTML)
+            .expect("recommend-cell.html.tmpl should compile — missed `\\{` escape or `{{endfor}}`?");
+    }
+
+    /// Phase 8 / Plan 01 / CELL-02 — WR-01 sentinel drift defense.
+    ///
+    /// Renders BOTH per-cell templates against a single
+    /// `CellTemplateContext` whose every renderable field is a unique
+    /// sentinel substring. Asserts each sentinel appears in BOTH outputs.
+    /// If a future PR adds a field to `CellTemplateContext` and the markdown
+    /// template but forgets the HTML template (or vice-versa), the omitted
+    /// side fails on the substring miss. The literal `(suspect)` substring
+    /// + the `7. ` rank prefix are also asserted in both surfaces (suspect
+    /// byte-identity + rank substitution gates).
+    #[test]
+    fn cell_templates_both_reference_all_fields() {
+        use crate::recommend::CellRecommendation;
+        use std::collections::BTreeMap;
+
+        // Synthetic CellRecommendation with sentinel substrings in every
+        // renderable scalar field. `composite_score` and `axes` are NOT
+        // rendered by either template — they receive arbitrary placeholder
+        // values just to satisfy the type. Test 3 below asserts those two
+        // fields are absent from CellTemplateContext.
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        axes.insert("throughput", 1.0);
+        let cell = CellRecommendation {
+            rank: 7,
+            alloc: "_SENTINEL_ALLOC_".to_string(),
+            env: "_SENTINEL_ENV_".to_string(),
+            composite_score: 42.42,
+            axes,
+            tldr: "_SENTINEL_TLDR_".to_string(),
+            strengths: vec!["_SENTINEL_STRENGTH_A_", "_SENTINEL_STRENGTH_B_"],
+            weaknesses: vec!["_SENTINEL_WEAKNESS_A_", "_SENTINEL_WEAKNESS_B_"],
+            recommended_for: vec!["_SENTINEL_RECCLASS_"],
+            avoid_for: vec!["_SENTINEL_AVOIDCLASS_"],
+            suspect_flag: true,
+        };
+        let ctx = build_cell_template_context(&cell);
+
+        let mut tt = TinyTemplate::new();
+        tt.add_template("recommend-cell-md", RECOMMEND_CELL_MD)
+            .expect("md compile");
+        tt.add_template("recommend-cell-html", RECOMMEND_CELL_HTML)
+            .expect("html compile");
+        let md = tt.render("recommend-cell-md", &ctx).expect("md render");
+        let html = tt.render("recommend-cell-html", &ctx).expect("html render");
+
+        // Cross-surface field-presence parity: every sentinel renders in
+        // BOTH outputs. The literal `(suspect)` parenthesized form is the
+        // suspect byte-identity gate (no `<em>`, no badge, no glyph).
+        let expected_in_both = [
+            "_SENTINEL_ALLOC_",
+            "_SENTINEL_ENV_",
+            "_SENTINEL_TLDR_",
+            "_SENTINEL_STRENGTH_A_",
+            "_SENTINEL_STRENGTH_B_",
+            "_SENTINEL_WEAKNESS_A_",
+            "_SENTINEL_WEAKNESS_B_",
+            "_SENTINEL_RECCLASS_",
+            "_SENTINEL_AVOIDCLASS_",
+            "(suspect)",
+        ];
+        for s in expected_in_both {
+            assert!(md.contains(s), "MD missing {s}: {md}");
+            assert!(html.contains(s), "HTML missing {s}: {html}");
+        }
+
+        // Rank substitution in both surfaces.
+        assert!(md.contains("7. "), "MD missing rank prefix `7. `: {md}");
+        assert!(html.contains("7. "), "HTML missing rank prefix `7. `: {html}");
+
+        // HTML id uses rank_padded (`07`), not rank (`7`). Bonus check
+        // that the `{:02}` formatter wired through to the article id.
+        assert!(
+            html.contains(r#"id="recommend-07-_SENTINEL_ALLOC_-_SENTINEL_ENV_""#),
+            "HTML missing rank_padded id `recommend-07-...`: {html}"
+        );
+    }
+
+    /// Phase 8 / Plan 01 — gate the CONTEXT.md decision that per-cell
+    /// cards do NOT render `composite_score` or `axes`. Serializes a
+    /// freshly-built `CellTemplateContext` to JSON and asserts the key
+    /// set is exactly the 10 documented fields, alphabetically sorted.
+    /// A future PR that adds `composite_score` or `axes` to the struct
+    /// (instead of routing it through the leading summary table or the
+    /// Phase 9 spider chart) fails this test.
+    #[test]
+    fn cell_template_context_excludes_score_and_axes() {
+        use crate::recommend::CellRecommendation;
+        use std::collections::BTreeMap;
+
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        axes.insert("throughput", 1.0);
+        let cell = CellRecommendation {
+            rank: 1,
+            alloc: "x".to_string(),
+            env: "y".to_string(),
+            composite_score: 0.0,
+            axes,
+            tldr: "z".to_string(),
+            strengths: vec![],
+            weaknesses: vec![],
+            recommended_for: vec![],
+            avoid_for: vec![],
+            suspect_flag: false,
+        };
+        let ctx = build_cell_template_context(&cell);
+        let value = serde_json::to_value(&ctx).expect("serialize CellTemplateContext");
+        let mut keys: Vec<String> = value
+            .as_object()
+            .expect("CellTemplateContext serializes to a JSON object")
+            .keys()
+            .cloned()
+            .collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec![
+                "alloc",
+                "avoid_for",
+                "env",
+                "rank",
+                "rank_padded",
+                "recommended_for",
+                "strengths",
+                "suspect_flag",
+                "tldr",
+                "weaknesses",
+            ],
+            "CellTemplateContext field-set drifted — composite_score / axes must NOT be added here"
+        );
+    }
+
     /// `{ results_json | unescaped }` must NOT HTML-escape the JSON. The
     /// rendered string contains the literal `:` and `[` characters from
     /// the JSON, not `&#x3A;` / `&#x5B;`.
