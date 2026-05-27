@@ -57,17 +57,37 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let outcome = loader::discover(&cli.input)?;
     let metas = loader::load_cell_metas(&cli.meta)?;
-    // SEC-02: security metas loaded but intentionally dormant in Phase 6.
-    // Leading underscore signals Phase-7-pickup — that plan renames to
-    // `security_metas` and threads it into `score::compute_axes`. Wiring
-    // into markdown::write / html::write is explicitly forbidden in this
-    // phase per RESEARCH §Risks #1 (byte-identical-output discipline).
-    let _security_metas = loader::load_security_metas(&cli.security)?;
+    // Phase 7 / SEC-02 → Phase 8 wiring: security metas now thread into
+    // `score::compute_axes` (security axis). Empty `--security ""` flag
+    // produces an empty BTreeMap which `compute_axes` handles via the
+    // `score=0 + em-dash tooltip` fallback (SEC-03 / Plan 07).
+    let security_metas = loader::load_security_metas(&cli.security)?;
     let out_dir = std::path::Path::new(&cli.output);
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("creating output dir {}", cli.output))?;
-    markdown::write(&outcome, &metas, out_dir)?;
-    html::write(&outcome, &metas, out_dir)?;
+
+    // Phase 8 / Plan 02 / CELL-04 — score → top_n pipeline.
+    //
+    // Pipeline: `compute_axes` derives 8 normalized axes per (alloc, env)
+    // cell from the runs vec + sidecars. `score_cells` collapses to a
+    // single composite_score (equal-weighted geometric mean across axes).
+    // `top_n_cells` ranks 1..=TOP_N_TOTAL and decorates with strengths /
+    // weaknesses / tldr / suspect_flag.
+    //
+    // Both writers receive the same `&top_n` so REPORT.md and index.html
+    // surface byte-identical ranking + per-cell content (WR-01 cross-
+    // surface drift defense, gated by `cell_templates_both_reference_all_fields`).
+    //
+    // Empty-runs / zero-cell case: `compute_axes` returns an empty Vec,
+    // `score_cells` returns empty, `top_n_cells` returns empty, and both
+    // writers' empty-top_n early-returns preserve v1.0 byte-identity for
+    // synthetic-no-scores fixtures.
+    let cell_axes = score::compute_axes(&outcome.runs, &metas, &security_metas);
+    let cell_scores = score::score_cells(cell_axes);
+    let top_n = recommend::top_n_cells(cell_scores, &outcome.runs);
+
+    markdown::write(&outcome, &metas, &top_n, out_dir)?;
+    html::write(&outcome, &metas, &top_n, out_dir)?;
     eprintln!(
         "aggregated {} runs, skipped {}",
         outcome.runs.len(),

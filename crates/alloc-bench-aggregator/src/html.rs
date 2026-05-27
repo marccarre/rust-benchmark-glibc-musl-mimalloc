@@ -181,9 +181,20 @@ pub(crate) fn build_cell_template_context(cell: &CellRecommendation) -> CellTemp
 /// branching. If a future contributor surfaces sidecar data in the
 /// dashboard, thread `metas` into `render` and `BuiltContext` and
 /// add a smoke test asserting the HTML contains the meta value.
+///
+/// Phase 8 / Plan 02 / CELL-04: `top_n` parameter accepted for callsite
+/// symmetry with `markdown::write`. Plan 02 Task 2 expands this signature's
+/// body to (a) wire `top_n` through `render`/`HtmlContext` so the
+/// `<section class="top-n-recommendations">` block renders inside
+/// `index.html`, gated by `{{if has_top_n}}`, and (b) write per-cell
+/// `recommend-{rank:02d}-{alloc}-{env}.html` fragments alongside
+/// `index.html`. For now the parameter is held under an underscore prefix
+/// so the binary compiles without rendering the section yet (preserves
+/// v1.0 HTML byte-identity until Task 2 lands).
 pub fn write(
     outcome: &LoadOutcome,
     _metas: &HashMap<(String, String), CellMeta>,
+    _top_n: &[CellRecommendation],
     out_dir: &Path,
 ) -> Result<()> {
     let html = render(&outcome.runs)?;
