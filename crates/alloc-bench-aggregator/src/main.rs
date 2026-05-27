@@ -84,7 +84,14 @@ fn main() -> Result<()> {
     // synthetic-no-scores fixtures.
     let cell_axes = score::compute_axes(&outcome.runs, &metas, &security_metas);
     let cell_scores = score::score_cells(cell_axes);
-    let top_n = recommend::top_n_cells(cell_scores, &outcome.runs);
+    // Phase 9 / POLAR-05 stub: empty image_sizes here; Plan 09-03 wires
+    // the real `BTreeMap<String, f64>` derived from `metas` so the
+    // Pareto column populates. Empty BTreeMap → no cell on the front
+    // (matches `top_n_cells_with_empty_image_sizes_marks_all_cells_not_pareto`
+    // semantics) — preserves v1.0 byte-identical output until 09-03.
+    let image_sizes_stub: std::collections::BTreeMap<String, f64> =
+        std::collections::BTreeMap::new();
+    let top_n = recommend::top_n_cells(cell_scores, &outcome.runs, &image_sizes_stub);
 
     markdown::write(&outcome, &metas, &top_n, out_dir)?;
     html::write(&outcome, &metas, &top_n, out_dir)?;
