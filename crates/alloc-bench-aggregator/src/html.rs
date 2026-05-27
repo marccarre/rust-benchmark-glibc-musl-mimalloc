@@ -704,7 +704,7 @@ mod tests {
     #[test]
     fn render_inlines_results_json_unescaped() {
         let run = make_test_run("system", None, "test", 50_000);
-        let html = render(&[run], &[]).expect("render");
+        let html = render(&[run], &[], &[]).expect("render");
         assert!(
             html.contains("\"schema_version\":1"),
             "rendered html missing schema_version key in inlined JSON"
@@ -782,7 +782,7 @@ mod tests {
         // Phase 8 / Plan 02: empty top_n preserves CR-01 escape testing
         // surface — adding ranking data would obscure the inlined JSON
         // assertions below.
-        let html = render(&[run], &[]).expect("render");
+        let html = render(&[run], &[], &[]).expect("render");
         // Negative: the unescaped script-terminator MUST NOT appear in
         // the rendered HTML — neither the literal `</script><script>`
         // (which would terminate the inline RESULTS block AND inject
@@ -882,7 +882,7 @@ mod tests {
             50_000,
         );
         let top_n = make_top_n(10);
-        let html = render(&[run], &top_n).expect("render");
+        let html = render(&[run], &top_n, &[]).expect("render");
 
         // Section exists.
         let top_n_idx = html
@@ -925,7 +925,7 @@ mod tests {
             50_000,
         );
         let top_n = make_top_n(10);
-        let html = render(&[run], &top_n).expect("render");
+        let html = render(&[run], &top_n, &[]).expect("render");
 
         // Single details block.
         let details_open_count = html.matches("<details>").count();
@@ -997,7 +997,7 @@ mod tests {
             "multithread",
             50_000,
         );
-        let html = render(&[run], &[]).expect("render");
+        let html = render(&[run], &[], &[]).expect("render");
 
         assert!(
             !html.contains(r#"<section class="top-n-recommendations">"#),
@@ -1107,7 +1107,7 @@ mod tests {
             50_000,
         );
         let top_n = make_top_n(10);
-        let html = render(&[run], &top_n).expect("render with top_n must succeed");
+        let html = render(&[run], &top_n, &[]).expect("render with top_n must succeed");
 
         // The `{{call recommend-cell-html with cell}}` invocations
         // produced 10 articles with proper rank-padded ids.
@@ -1118,5 +1118,171 @@ mod tests {
                 "missing `{id_prefix}...` rank-padded article id in:\n{html}"
             );
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 9 / Plan 09-03 / Task 3 — spider chart context + section.
+    //
+    // Tests gate the `<section class="spider-chart">` block + Plotly
+    // bootstrap. The render fn now takes `cell_scores: &[CellScore]`
+    // (3rd arg) so the spider section consumes the top-3 by
+    // `cell_scores[..TOP_N_SPIDER]` plus a matrix-mean reference trace.
+    //
+    // Test surface:
+    //   1. plotly_sri_hash_unchanged — pin the SRI hash literal byte-exact
+    //   2. spider_section_present_when_top_n_non_empty — section emitted
+    //   3. spider_section_absent_when_top_n_empty — `{{ if has_spider }}`
+    //   4. spider_traces_json_contains_scatterpolar_type — wire-up gate
+    // ------------------------------------------------------------------
+
+    /// Build a synthetic CellScore with composite + 8 axis scores (any
+    /// finite values are fine; the spider trace builder consumes them
+    /// through `polar::build_trace` whose own tests gate the polygon
+    /// closure, axis order, and label suffix).
+    fn make_score(alloc: &str, env: &str, composite: f64) -> crate::score::CellScore {
+        use std::collections::BTreeMap;
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        // 8 measurement axes (alphabetical via BTreeMap; matches the
+        // canonical MEASUREMENT_AXES iteration order via constant slice
+        // lookup in polar::build_trace).
+        for (i, name) in [
+            "cpu_efficiency",
+            "image_size_efficiency",
+            "memory_efficiency",
+            "resilience",
+            "scaling_factor",
+            "security_posture",
+            "tail_latency",
+            "throughput",
+        ]
+        .iter()
+        .enumerate()
+        {
+            // Spread scores 10..80 across the 8 axes so the polygon is
+            // visibly non-degenerate; any finite value is acceptable.
+            axes.insert(name, 10.0 + (i as f64) * 10.0);
+        }
+        crate::score::CellScore {
+            alloc: alloc.to_string(),
+            env: env.to_string(),
+            composite,
+            axes,
+        }
+    }
+
+    /// POLAR-04: the Plotly SRI hash is byte-pinned in the rendered HTML.
+    /// Re-verify against the upstream CDN via:
+    ///   curl -s 'https://cdn.plot.ly/plotly-2.35.3.min.js' \
+    ///     | openssl dgst -sha384 -binary | base64
+    /// Last verified live 2026-05-19 (RESEARCH §Code Examples §5).
+    #[test]
+    fn plotly_sri_hash_unchanged() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let html = render(&[run], &[], &[]).expect("render");
+        assert!(
+            html.contains(
+                "sha384-MqL7Cy3itNqCI1Wlc926K0XhyRKJ/NMqTaytIIEB+QIdInOploxqRIHRKLlhPykM"
+            ),
+            "rendered HTML missing byte-exact Plotly SRI hash literal"
+        );
+        assert!(
+            html.contains("https://cdn.plot.ly/plotly-2.35.3.min.js"),
+            "rendered HTML missing pinned Plotly 2.35.3 CDN URL"
+        );
+    }
+
+    /// POLAR-02 / POLAR-04: the spider chart `<section>` renders when
+    /// at least one CellRecommendation exists, with the verbatim section
+    /// heading and caption per CONTEXT.md "Section title and order"
+    /// (Phase 11 byte-stability inputs).
+    #[test]
+    fn spider_section_present_when_top_n_non_empty() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let top_n = make_top_n(3);
+        let scores = vec![
+            make_score("mimalloc", "alpine", 0.789),
+            make_score("jemalloc", "debian-slim", 0.756),
+            make_score("ptmalloc", "wolfi", 0.723),
+        ];
+        let html = render(&[run], &top_n, &scores).expect("render");
+        assert!(
+            html.contains(r#"<section class="spider-chart">"#),
+            "missing spider section in:\n{html}"
+        );
+        assert!(
+            html.contains("<h2>Top-3 Above the Fold</h2>"),
+            "missing verbatim spider section heading in:\n{html}"
+        );
+        assert!(
+            html.contains("Spider charts of the top-3 cells across 8 normalized axes (0-1). Grey reference polygon = mean across all 18 cells."),
+            "missing verbatim spider section caption in:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<div id="chart-spider""#),
+            "missing chart-spider div in:\n{html}"
+        );
+    }
+
+    /// POLAR-02 / WR-01 mirror: empty top_n omits the spider section
+    /// entirely (gated by `{{ if has_spider }}`). Mirrors `has_top_n`
+    /// and preserves v1.0 byte-identity on synthetic-no-scores fixtures.
+    #[test]
+    fn spider_section_absent_when_top_n_empty() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let html = render(&[run], &[], &[]).expect("render");
+        assert!(
+            !html.contains(r#"<section class="spider-chart">"#),
+            "expected NO spider section for empty top_n, got:\n{html}"
+        );
+        assert!(
+            !html.contains(r#"<div id="chart-spider""#),
+            "expected NO chart-spider div for empty top_n, got:\n{html}"
+        );
+        assert!(
+            !html.contains("<h2>Top-3 Above the Fold</h2>"),
+            "expected NO spider heading for empty top_n, got:\n{html}"
+        );
+    }
+
+    /// POLAR-01: the rendered HTML inlines the Plotly trace JSON via
+    /// `{ spider_traces_json | unescaped }`. Each trace built by
+    /// `polar::build_trace` and `polar::build_reference_trace` carries
+    /// `type: "scatterpolar"` (asserted in polar::tests). The serde_json
+    /// default formatting + `to_script_safe_json` wrapper preserve the
+    /// `"type":"scatterpolar"` byte sequence verbatim.
+    #[test]
+    fn spider_traces_json_contains_scatterpolar_type() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let top_n = make_top_n(3);
+        let scores = vec![
+            make_score("mimalloc", "alpine", 0.789),
+            make_score("jemalloc", "debian-slim", 0.756),
+            make_score("ptmalloc", "wolfi", 0.723),
+        ];
+        let html = render(&[run], &top_n, &scores).expect("render");
+        assert!(
+            html.contains(r#""type":"scatterpolar""#),
+            "missing `\"type\":\"scatterpolar\"` substring in inlined spider traces JSON:\n{html}"
+        );
     }
 }
