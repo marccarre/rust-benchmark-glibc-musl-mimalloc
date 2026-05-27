@@ -375,6 +375,68 @@ pub fn top_n(scores: Vec<CellScore>, n: usize) -> Vec<CellScore> {
     scores
 }
 
+/// Phase 9 / POLAR-05 — Pareto front of `(composite_score ↑,
+/// image_size_mb ↓)`. Returns the set of `(alloc, env)` keys for the
+/// non-dominated cells.
+///
+/// Algorithm: O(n²) sweep per `09-RESEARCH.md §4`. A cell A is on the
+/// front iff no other cell B (with `image_size_mb` defined) strictly
+/// dominates it — i.e.
+///   `B.composite >= A.composite AND B.image_size <= A.image_size`
+///   AND at least one inequality is strict.
+///
+/// macOS host (cells whose env is absent from `image_sizes`) is
+/// EXCLUDED from the front per `09-CONTEXT.md §"Pareto-front
+/// computation location"`: such cells never enter the result set, and
+/// they cannot dominate any other cell either (the j loop skips them).
+///
+/// Return type is `BTreeSet<(String, String)>` so iteration is
+/// alphabetical — preserves the byte-identical-output discipline
+/// (CLAUDE.md Conventions §"Byte-identical-output discipline").
+pub fn pareto_front(
+    cells: &[CellScore],
+    image_sizes: &BTreeMap<String, f64>,
+) -> BTreeSet<(String, String)> {
+    let mut out: BTreeSet<(String, String)> = BTreeSet::new();
+    for (i, ci) in cells.iter().enumerate() {
+        // macOS host case: cells whose env is absent from `image_sizes`
+        // are EXCLUDED from the front entirely — they have no y-axis
+        // value, so domination is undefined.
+        let yi = match image_sizes.get(&ci.env).copied() {
+            Some(v) => v,
+            None => continue,
+        };
+        let xi = ci.composite;
+
+        // Search for any cj that strictly dominates ci.
+        let mut dominated = false;
+        for (j, cj) in cells.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            // A cell with no image_size cannot dominate another cell —
+            // the y-axis comparison is undefined.
+            let yj = match image_sizes.get(&cj.env).copied() {
+                Some(v) => v,
+                None => continue,
+            };
+            let xj = cj.composite;
+            // Weak: cj is no worse than ci on either axis.
+            let weak = xj >= xi && yj <= yi;
+            // Strict: cj is strictly better on at least one axis.
+            let strict = xj > xi || yj < yi;
+            if weak && strict {
+                dominated = true;
+                break;
+            }
+        }
+        if !dominated {
+            out.insert((ci.alloc.clone(), ci.env.clone()));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
