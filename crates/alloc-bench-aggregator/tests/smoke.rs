@@ -762,3 +762,42 @@ fn aggregator_html_chart_cards_have_min_height_480() {
         "expected `min-height: 480px` on .chart-card"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 9 / Plan 09-03 / Task 3 — spider chart visual-contract smoke tests.
+//
+// Both tests run end-to-end through `cargo bin alloc-bench-aggregator` against
+// the committed fixtures, then assert substring presence on the rendered
+// `index.html`. They are additive — every prior smoke test stays untouched.
+// ---------------------------------------------------------------------------
+
+/// POLAR-04: the spider chart `<div id="chart-spider"` block lands in the
+/// rendered index.html when the fixture set produces at least one
+/// CellRecommendation (the committed fixtures always do — 5 runs across
+/// 3 fixtures with non-empty score axes guarantee a non-empty top_n).
+#[test]
+fn spider_div_present_when_data_exists() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains(r#"<div id="chart-spider""#),
+        "expected `<div id=\"chart-spider\"` in rendered index.html"
+    );
+}
+
+/// POLAR-04: the Plotly SRI hash literal is byte-pinned end-to-end. Extends
+/// the existing prefix-only check (`sha384-MqL7Cy3i`) at line 128 to the
+/// full hash to gate accidental partial-rotation drift. Re-verify upstream
+/// via:
+///   curl -s 'https://cdn.plot.ly/plotly-2.35.3.min.js' \
+///     | openssl dgst -sha384 -binary | base64
+/// (last verified 2026-05-19 per RESEARCH §Code Examples §5).
+#[test]
+fn plotly_sri_hash_unchanged_full_string() {
+    let (_dir, html) = run_aggregator_against_fixtures();
+    assert!(
+        html.contains(
+            "sha384-MqL7Cy3itNqCI1Wlc926K0XhyRKJ/NMqTaytIIEB+QIdInOploxqRIHRKLlhPykM"
+        ),
+        "expected full Plotly SRI hash literal in rendered index.html"
+    );
+}

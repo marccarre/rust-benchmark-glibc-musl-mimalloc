@@ -30,7 +30,9 @@ use tinytemplate::TinyTemplate;
 use crate::loader::{CellMeta, LoadOutcome};
 use crate::markdown::env_label;
 use crate::multi_run::{aggregate as mr_aggregate, MultiRunStats};
-use crate::recommend::{CellRecommendation, TOP_N_TABLE};
+use crate::polar;
+use crate::recommend::{CellRecommendation, TOP_N_SPIDER, TOP_N_TABLE};
+use crate::score::CellScore;
 
 const TEMPLATE: &str = include_str!("../templates/index.html.tmpl");
 
@@ -133,6 +135,27 @@ struct HtmlContext<'a> {
     /// early-return so v1.0 byte-identity is preserved symmetrically across
     /// both surfaces when `top_n` is empty (no `<section>` bytes emitted).
     has_top_n: bool,
+    /// Phase 9 / POLAR-01..04 — pre-serialized JSON array of Plotly
+    /// scatterpolar traces (top-3 cell traces + matrix-mean reference
+    /// trace built by `polar::build_reference_trace`, FIRST element so
+    /// the reference polygon renders BEHIND the cell polygons per
+    /// CONTEXT.md "Layout & Plotly Configuration"). Inlined into the
+    /// `<script>` block via `{ spider_traces_json | unescaped }` so
+    /// tinytemplate doesn't HTML-escape `<`/`>`/`&`/`"` inside the
+    /// JSON.
+    spider_traces_json: &'a str,
+    /// Phase 9 / POLAR-04 — pre-serialized JSON layout object reused
+    /// for the spider chart. radialaxis range [0,1], angularaxis
+    /// tickfont, etc. per UI-SPEC §"Per-chart Plotly layout". Inlined
+    /// via `{ spider_layout_json | unescaped }`.
+    spider_layout_json: &'a str,
+    /// Phase 9 / POLAR-02 — gates the entire
+    /// `<section class="spider-chart">` block in `index.html.tmpl` via
+    /// `{{ if has_spider }}...{{ endif }}` wrapper. Set to
+    /// `!top_n.is_empty()` in `render` (mirrors `has_top_n`). Empty
+    /// top_n preserves v1.0 byte-identity on synthetic-no-scores
+    /// fixtures.
+    has_spider: bool,
 }
 
 /// Phase 8 / Plan 01 — render context for the per-cell Markdown card
@@ -167,6 +190,13 @@ pub(crate) struct CellTemplateContext {
     pub recommended_for: Vec<&'static str>,
     pub avoid_for: Vec<&'static str>,
     pub suspect_flag: bool,
+    /// Phase 9 / POLAR-05 — true iff `(alloc, env)` sits on the Pareto
+    /// front (composite_score↑ × image_size_mb↓ strict-dominance sweep,
+    /// computed by `score::pareto_front` and decorated onto each
+    /// `CellRecommendation` by `recommend::top_n_cells`). Renders as a
+    /// trailing `★` glyph in both per-cell templates so REPORT.md and
+    /// index.html agree on which cells deserve the front-marker.
+    pub is_pareto: bool,
 }
 
 /// Phase 8 / Plan 01 — convert a `CellRecommendation` (Phase 7
@@ -186,6 +216,7 @@ pub(crate) fn build_cell_template_context(cell: &CellRecommendation) -> CellTemp
         recommended_for: cell.recommended_for.clone(),
         avoid_for: cell.avoid_for.clone(),
         suspect_flag: cell.suspect_flag,
+        is_pareto: cell.is_pareto,
     }
 }
 
@@ -216,9 +247,10 @@ pub fn write(
     outcome: &LoadOutcome,
     _metas: &HashMap<(String, String), CellMeta>,
     top_n: &[CellRecommendation],
+    cell_scores: &[CellScore],
     out_dir: &Path,
 ) -> Result<()> {
-    let html = render(&outcome.runs, top_n)?;
+    let html = render(&outcome.runs, top_n, cell_scores)?;
     let out_path = out_dir.join("index.html");
     std::fs::write(&out_path, &html).with_context(|| format!("writing {}", out_path.display()))?;
 
@@ -248,6 +280,21 @@ struct BuiltContext {
     /// D-11 / D-12 derived map: keyed by `"alloc|env|scenario"` strings.
     /// Empty `"{}"` when no `(alloc, env, scenario)` triple has ≥2 runs.
     multi_run_grouped: String,
+}
+
+/// Phase 9 spider chart pre-serialized JSON, owned in render() and
+/// borrowed by `HtmlContext.spider_traces_json` / `spider_layout_json`.
+/// Lives outside `BuiltContext` because it depends on `cell_scores`,
+/// not just `runs` — `build_context` is called early on the runs vec
+/// while the spider context is built later in render() once
+/// `cell_scores` is in scope.
+struct SpiderContext {
+    /// Pre-serialized JSON array `[reference_trace, cell_trace_1, ...]`
+    /// where the reference trace is FIRST per CONTEXT.md "Layout &
+    /// Plotly Configuration" decision (renders BEHIND cell polygons).
+    traces: String,
+    /// Pre-serialized JSON layout object reused across all charts.
+    layout: String,
 }
 
 /// JSON-encode for safe inlining inside an HTML `<script>` block. Escapes
@@ -343,7 +390,71 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
     })
 }
 
-fn render(runs: &[Run], top_n: &[CellRecommendation]) -> Result<String> {
+/// Phase 9 / POLAR-01..04 — build the spider chart trace + layout JSON
+/// strings inlined into `index.html.tmpl`. The reference polygon
+/// (matrix mean across all 18 cells) is the FIRST trace per CONTEXT.md
+/// "Layout & Plotly Configuration" so it renders BEHIND the cell
+/// polygons. Subsequent traces are the top-`TOP_N_SPIDER` cells in
+/// rank order.
+///
+/// Empty `cell_scores` returns `"[]"` for traces and the standard
+/// layout JSON (the `{{ if has_spider }}` gate omits the section
+/// entirely; this fn is still called but the strings are unused).
+fn build_spider_context(cell_scores: &[CellScore]) -> Result<SpiderContext> {
+    // Take the first TOP_N_SPIDER (=3) cells. `recommend::top_n_cells`
+    // already truncates and sorts cell_scores by composite score, so
+    // the slice [..TOP_N_SPIDER] gives the top-3 in rank order.
+    let head = if cell_scores.len() <= TOP_N_SPIDER {
+        cell_scores
+    } else {
+        &cell_scores[..TOP_N_SPIDER]
+    };
+
+    // Reference trace FIRST so it renders behind the cell polygons.
+    let mut traces: Vec<serde_json::Value> = Vec::with_capacity(head.len() + 1);
+    traces.push(polar::build_reference_trace(cell_scores));
+    for score in head {
+        traces.push(polar::build_trace(score));
+    }
+
+    // UI-SPEC §"Per-chart Plotly layout" — single layout reused across
+    // all 3 charts (polar grid). radialaxis range [0,1], angularaxis
+    // tickfont, white background, no legend (cell title doubles as
+    // chart heading), modest margins.
+    let layout = serde_json::json!({
+        "polar": {
+            "radialaxis": {
+                "range": [0, 1],
+                "visible": true,
+                "showticklabels": false,
+                "gridcolor": "#E1E4E8",
+                "linecolor": "#E1E4E8"
+            },
+            "angularaxis": {
+                "tickfont": { "size": 11, "color": "#666" },
+                "gridcolor": "#E1E4E8",
+                "linecolor": "#E1E4E8"
+            },
+            "bgcolor": "#ffffff"
+        },
+        "showlegend": false,
+        "margin": { "l": 30, "r": 30, "t": 40, "b": 30 },
+        "autosize": true,
+        "paper_bgcolor": "#ffffff",
+        "plot_bgcolor": "#ffffff"
+    });
+
+    Ok(SpiderContext {
+        traces: to_script_safe_json(&traces).context("serializing spider traces to JSON")?,
+        layout: to_script_safe_json(&layout).context("serializing spider layout to JSON")?,
+    })
+}
+
+fn render(
+    runs: &[Run],
+    top_n: &[CellRecommendation],
+    cell_scores: &[CellScore],
+) -> Result<String> {
     let mut tt = TinyTemplate::new();
     tt.add_template("index", TEMPLATE)
         .context("compiling index.html.tmpl")?;
@@ -361,6 +472,7 @@ fn render(runs: &[Run], top_n: &[CellRecommendation]) -> Result<String> {
         .context("compiling recommend-cell.md.tmpl")?;
 
     let ctx_owned = build_context(runs)?;
+    let spider = build_spider_context(cell_scores)?;
     let timestamp = chrono::Utc::now().to_rfc3339();
     let cell_count = count_unique_cells(runs);
 
@@ -393,6 +505,14 @@ fn render(runs: &[Run], top_n: &[CellRecommendation]) -> Result<String> {
         top_n_visible: &visible_ctxs,
         top_n_collapsed: &collapsed_ctxs,
         has_top_n: !top_n.is_empty(),
+        spider_traces_json: &spider.traces,
+        spider_layout_json: &spider.layout,
+        // Phase 9 / POLAR-02 — gate the spider section on top_n
+        // non-emptiness (mirrors `has_top_n`). `cell_scores.is_empty()`
+        // would also work but yields the same answer in practice
+        // (top_n is truncated from cell_scores) — gating on top_n
+        // is the documented contract per CONTEXT.md.
+        has_spider: !top_n.is_empty(),
     };
     tt.render("index", &ctx).context("rendering index.html")
 }
@@ -573,10 +693,11 @@ mod tests {
             recommended_for: vec!["_SENTINEL_RECCLASS_"],
             avoid_for: vec!["_SENTINEL_AVOIDCLASS_"],
             suspect_flag: true,
-            // Phase 9 / POLAR-05: sentinel-template field-parity test does
-            // not yet check the Pareto column (Plan 09-03 lands the row
-            // emitter); explicit `false` keeps the literal byte-identical.
-            is_pareto: false,
+            // Phase 9 / POLAR-05 / Plan 09-03: WR-01 sentinel now also
+            // checks the per-cell `★` annotation. Setting is_pareto: true
+            // forces both per-cell templates to emit U+2605; the
+            // `expected_in_both` assertion below catches drift.
+            is_pareto: true,
         };
         let ctx = build_cell_template_context(&cell);
 
@@ -591,6 +712,9 @@ mod tests {
         // Cross-surface field-presence parity: every sentinel renders in
         // BOTH outputs. The literal `(suspect)` parenthesized form is the
         // suspect byte-identity gate (no `<em>`, no badge, no glyph).
+        // Phase 9 / POLAR-05 / Plan 09-03: `\u{2605}` (★) is the per-cell
+        // Pareto-front annotation; both templates append
+        // `{{ if is_pareto }} ★{{ endif }}` to the heading.
         let expected_in_both = [
             "_SENTINEL_ALLOC_",
             "_SENTINEL_ENV_",
@@ -602,6 +726,7 @@ mod tests {
             "_SENTINEL_RECCLASS_",
             "_SENTINEL_AVOIDCLASS_",
             "(suspect)",
+            "\u{2605}",
         ];
         for s in expected_in_both {
             assert!(md.contains(s), "MD missing {s}: {md}");
@@ -666,6 +791,7 @@ mod tests {
                 "alloc",
                 "avoid_for",
                 "env",
+                "is_pareto",
                 "rank",
                 "rank_padded",
                 "recommended_for",
@@ -690,7 +816,7 @@ mod tests {
     #[test]
     fn render_inlines_results_json_unescaped() {
         let run = make_test_run("system", None, "test", 50_000);
-        let html = render(&[run], &[]).expect("render");
+        let html = render(&[run], &[], &[]).expect("render");
         assert!(
             html.contains("\"schema_version\":1"),
             "rendered html missing schema_version key in inlined JSON"
@@ -768,7 +894,7 @@ mod tests {
         // Phase 8 / Plan 02: empty top_n preserves CR-01 escape testing
         // surface — adding ranking data would obscure the inlined JSON
         // assertions below.
-        let html = render(&[run], &[]).expect("render");
+        let html = render(&[run], &[], &[]).expect("render");
         // Negative: the unescaped script-terminator MUST NOT appear in
         // the rendered HTML — neither the literal `</script><script>`
         // (which would terminate the inline RESULTS block AND inject
@@ -868,7 +994,7 @@ mod tests {
             50_000,
         );
         let top_n = make_top_n(10);
-        let html = render(&[run], &top_n).expect("render");
+        let html = render(&[run], &top_n, &[]).expect("render");
 
         // Section exists.
         let top_n_idx = html
@@ -911,7 +1037,7 @@ mod tests {
             50_000,
         );
         let top_n = make_top_n(10);
-        let html = render(&[run], &top_n).expect("render");
+        let html = render(&[run], &top_n, &[]).expect("render");
 
         // Single details block.
         let details_open_count = html.matches("<details>").count();
@@ -983,7 +1109,7 @@ mod tests {
             "multithread",
             50_000,
         );
-        let html = render(&[run], &[]).expect("render");
+        let html = render(&[run], &[], &[]).expect("render");
 
         assert!(
             !html.contains(r#"<section class="top-n-recommendations">"#),
@@ -1022,7 +1148,7 @@ mod tests {
         let top_n = make_top_n(10);
 
         let tmp = tempfile::tempdir().expect("tempdir");
-        write(&outcome, &metas, &top_n, tmp.path()).expect("write");
+        write(&outcome, &metas, &top_n, &[], tmp.path()).expect("write");
 
         // Collect filenames matching `recommend-*.html`.
         let mut fragment_names: Vec<String> = std::fs::read_dir(tmp.path())
@@ -1093,7 +1219,7 @@ mod tests {
             50_000,
         );
         let top_n = make_top_n(10);
-        let html = render(&[run], &top_n).expect("render with top_n must succeed");
+        let html = render(&[run], &top_n, &[]).expect("render with top_n must succeed");
 
         // The `{{call recommend-cell-html with cell}}` invocations
         // produced 10 articles with proper rank-padded ids.
@@ -1104,5 +1230,171 @@ mod tests {
                 "missing `{id_prefix}...` rank-padded article id in:\n{html}"
             );
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 9 / Plan 09-03 / Task 3 — spider chart context + section.
+    //
+    // Tests gate the `<section class="spider-chart">` block + Plotly
+    // bootstrap. The render fn now takes `cell_scores: &[CellScore]`
+    // (3rd arg) so the spider section consumes the top-3 by
+    // `cell_scores[..TOP_N_SPIDER]` plus a matrix-mean reference trace.
+    //
+    // Test surface:
+    //   1. plotly_sri_hash_unchanged — pin the SRI hash literal byte-exact
+    //   2. spider_section_present_when_top_n_non_empty — section emitted
+    //   3. spider_section_absent_when_top_n_empty — `{{ if has_spider }}`
+    //   4. spider_traces_json_contains_scatterpolar_type — wire-up gate
+    // ------------------------------------------------------------------
+
+    /// Build a synthetic CellScore with composite + 8 axis scores (any
+    /// finite values are fine; the spider trace builder consumes them
+    /// through `polar::build_trace` whose own tests gate the polygon
+    /// closure, axis order, and label suffix).
+    fn make_score(alloc: &str, env: &str, composite: f64) -> crate::score::CellScore {
+        use std::collections::BTreeMap;
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        // 8 measurement axes (alphabetical via BTreeMap; matches the
+        // canonical MEASUREMENT_AXES iteration order via constant slice
+        // lookup in polar::build_trace).
+        for (i, name) in [
+            "cpu_efficiency",
+            "image_size_efficiency",
+            "memory_efficiency",
+            "resilience",
+            "scaling_factor",
+            "security_posture",
+            "tail_latency",
+            "throughput",
+        ]
+        .iter()
+        .enumerate()
+        {
+            // Spread scores 10..80 across the 8 axes so the polygon is
+            // visibly non-degenerate; any finite value is acceptable.
+            axes.insert(name, 10.0 + (i as f64) * 10.0);
+        }
+        crate::score::CellScore {
+            alloc: alloc.to_string(),
+            env: env.to_string(),
+            composite,
+            axes,
+        }
+    }
+
+    /// POLAR-04: the Plotly SRI hash is byte-pinned in the rendered HTML.
+    /// Re-verify against the upstream CDN via:
+    ///   curl -s 'https://cdn.plot.ly/plotly-2.35.3.min.js' \
+    ///     | openssl dgst -sha384 -binary | base64
+    /// Last verified live 2026-05-19 (RESEARCH §Code Examples §5).
+    #[test]
+    fn plotly_sri_hash_unchanged() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let html = render(&[run], &[], &[]).expect("render");
+        assert!(
+            html.contains(
+                "sha384-MqL7Cy3itNqCI1Wlc926K0XhyRKJ/NMqTaytIIEB+QIdInOploxqRIHRKLlhPykM"
+            ),
+            "rendered HTML missing byte-exact Plotly SRI hash literal"
+        );
+        assert!(
+            html.contains("https://cdn.plot.ly/plotly-2.35.3.min.js"),
+            "rendered HTML missing pinned Plotly 2.35.3 CDN URL"
+        );
+    }
+
+    /// POLAR-02 / POLAR-04: the spider chart `<section>` renders when
+    /// at least one CellRecommendation exists, with the verbatim section
+    /// heading and caption per CONTEXT.md "Section title and order"
+    /// (Phase 11 byte-stability inputs).
+    #[test]
+    fn spider_section_present_when_top_n_non_empty() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let top_n = make_top_n(3);
+        let scores = vec![
+            make_score("mimalloc", "alpine", 0.789),
+            make_score("jemalloc", "debian-slim", 0.756),
+            make_score("ptmalloc", "wolfi", 0.723),
+        ];
+        let html = render(&[run], &top_n, &scores).expect("render");
+        assert!(
+            html.contains(r#"<section class="spider-chart">"#),
+            "missing spider section in:\n{html}"
+        );
+        assert!(
+            html.contains("<h2>Top-3 Above the Fold</h2>"),
+            "missing verbatim spider section heading in:\n{html}"
+        );
+        assert!(
+            html.contains("Spider charts of the top-3 cells across 8 normalized axes (0-1). Grey reference polygon = mean across all 18 cells."),
+            "missing verbatim spider section caption in:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<div id="chart-spider""#),
+            "missing chart-spider div in:\n{html}"
+        );
+    }
+
+    /// POLAR-02 / WR-01 mirror: empty top_n omits the spider section
+    /// entirely (gated by `{{ if has_spider }}`). Mirrors `has_top_n`
+    /// and preserves v1.0 byte-identity on synthetic-no-scores fixtures.
+    #[test]
+    fn spider_section_absent_when_top_n_empty() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let html = render(&[run], &[], &[]).expect("render");
+        assert!(
+            !html.contains(r#"<section class="spider-chart">"#),
+            "expected NO spider section for empty top_n, got:\n{html}"
+        );
+        assert!(
+            !html.contains(r#"<div id="chart-spider""#),
+            "expected NO chart-spider div for empty top_n, got:\n{html}"
+        );
+        assert!(
+            !html.contains("<h2>Top-3 Above the Fold</h2>"),
+            "expected NO spider heading for empty top_n, got:\n{html}"
+        );
+    }
+
+    /// POLAR-01: the rendered HTML inlines the Plotly trace JSON via
+    /// `{ spider_traces_json | unescaped }`. Each trace built by
+    /// `polar::build_trace` and `polar::build_reference_trace` carries
+    /// `type: "scatterpolar"` (asserted in polar::tests). The serde_json
+    /// default formatting + `to_script_safe_json` wrapper preserve the
+    /// `"type":"scatterpolar"` byte sequence verbatim.
+    #[test]
+    fn spider_traces_json_contains_scatterpolar_type() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let top_n = make_top_n(3);
+        let scores = vec![
+            make_score("mimalloc", "alpine", 0.789),
+            make_score("jemalloc", "debian-slim", 0.756),
+            make_score("ptmalloc", "wolfi", 0.723),
+        ];
+        let html = render(&[run], &top_n, &scores).expect("render");
+        assert!(
+            html.contains(r#""type":"scatterpolar""#),
+            "missing `\"type\":\"scatterpolar\"` substring in inlined spider traces JSON:\n{html}"
+        );
     }
 }
