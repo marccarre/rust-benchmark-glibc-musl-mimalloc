@@ -30,7 +30,7 @@ use tinytemplate::TinyTemplate;
 use crate::loader::{CellMeta, LoadOutcome};
 use crate::markdown::env_label;
 use crate::multi_run::{aggregate as mr_aggregate, MultiRunStats};
-use crate::recommend::CellRecommendation;
+use crate::recommend::{CellRecommendation, TOP_N_TABLE};
 
 const TEMPLATE: &str = include_str!("../templates/index.html.tmpl");
 
@@ -114,6 +114,25 @@ struct HtmlContext<'a> {
     timestamp_iso8601: &'a str,
     plotly_cdn_url: &'a str,
     plotly_sri_hash: &'a str,
+    /// Phase 8 / Plan 02 / CELL-04 — ranks 1..=`TOP_N_TABLE` (≤5) cards,
+    /// always-visible above the fold. Slice over pre-built
+    /// `CellTemplateContext` so the template can call `{rank_padded}` and
+    /// the field set is the field-substitution-only surface guarded by
+    /// the WR-01 sentinel test (`cell_templates_both_reference_all_fields`).
+    /// Template callsite: `{{ for cell in top_n_visible }}{{ call recommend-cell-html with cell }}{{ endfor }}`.
+    top_n_visible: &'a [CellTemplateContext],
+    /// Phase 8 / Plan 02 / CELL-04 — ranks (`TOP_N_TABLE`+1)..=`TOP_N_TOTAL`
+    /// (6..=10) cards, rendered inside `<details>`. Empty slice when
+    /// `top_n.len() <= TOP_N_TABLE`. Template callsite mirrors
+    /// `top_n_visible` but inside the `<details><summary>` GFM disclosure.
+    top_n_collapsed: &'a [CellTemplateContext],
+    /// Phase 8 / Plan 02 / CELL-04 — gates the entire
+    /// `<section class="top-n-recommendations">` block in `index.html.tmpl`
+    /// via `{{ if has_top_n }}...{{ endif }}` wrapper. Set to
+    /// `!top_n.is_empty()` in `render`. Mirrors `markdown.rs::emit_top_n_cells`'s
+    /// early-return so v1.0 byte-identity is preserved symmetrically across
+    /// both surfaces when `top_n` is empty (no `<section>` bytes emitted).
+    has_top_n: bool,
 }
 
 /// Phase 8 / Plan 01 — render context for the per-cell Markdown card
@@ -181,14 +200,39 @@ pub(crate) fn build_cell_template_context(cell: &CellRecommendation) -> CellTemp
 /// branching. If a future contributor surfaces sidecar data in the
 /// dashboard, thread `metas` into `render` and `BuiltContext` and
 /// add a smoke test asserting the HTML contains the meta value.
+///
+/// Phase 8 / Plan 02 / CELL-04: `top_n` parameter wired through `render`
+/// and `HtmlContext` so the `<section class="top-n-recommendations">` block
+/// renders inside `index.html`, gated by `{{if has_top_n}}` (mirrors the
+/// markdown side's early-return; v1.0 byte-identity preserved on empty top_n).
+///
+/// Phase 8 / Plan 02 / CELL-03: also writes 10 standalone single-card
+/// `recommend-{rank:02d}-{alloc}-{env}.html` fragments alongside
+/// `index.html` for future drilldown-link surfaces (V12-04 deferred).
+/// Filename pattern locked: rank zero-padded for natural filename sort;
+/// `cell.env` already short-form per Phase 7 plumbing (recommend.rs:659);
+/// trailing `\n` per POSIX file convention (CONTEXT.md "Specifics" ¶6).
 pub fn write(
     outcome: &LoadOutcome,
     _metas: &HashMap<(String, String), CellMeta>,
+    top_n: &[CellRecommendation],
     out_dir: &Path,
 ) -> Result<()> {
-    let html = render(&outcome.runs)?;
+    let html = render(&outcome.runs, top_n)?;
     let out_path = out_dir.join("index.html");
     std::fs::write(&out_path, &html).with_context(|| format!("writing {}", out_path.display()))?;
+
+    // Phase 8 / Plan 02 / CELL-03 — per-cell standalone HTML fragments.
+    // Symmetrical with `markdown::write`'s per-cell `.md` fragment loop.
+    for cell in top_n.iter() {
+        let frag = render_cell_html(cell)?;
+        let frag_path = out_dir.join(format!(
+            "recommend-{:02}-{}-{}.html",
+            cell.rank, cell.alloc, cell.env
+        ));
+        std::fs::write(&frag_path, &frag)
+            .with_context(|| format!("writing {}", frag_path.display()))?;
+    }
     Ok(())
 }
 
@@ -299,13 +343,41 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
     })
 }
 
-fn render(runs: &[Run]) -> Result<String> {
+fn render(runs: &[Run], top_n: &[CellRecommendation]) -> Result<String> {
     let mut tt = TinyTemplate::new();
     tt.add_template("index", TEMPLATE)
         .context("compiling index.html.tmpl")?;
+    // Phase 8 / Plan 02 — register BOTH per-cell templates against this
+    // engine. `index.html.tmpl` `{{call recommend-cell-html with cell}}`'s
+    // the HTML one inside two `{{for}}` loops; the markdown one is
+    // registered for symmetry + supports a hypothetical future
+    // `{{call recommend-cell-md ...}}` from another template surface
+    // without re-plumbing. Without these two registrations, render-time
+    // `{{call}}` returns `tinytemplate::Error::CalledTemplateNotFound`
+    // (T-08-04 mitigation).
+    tt.add_template("recommend-cell-html", RECOMMEND_CELL_HTML)
+        .context("compiling recommend-cell.html.tmpl")?;
+    tt.add_template("recommend-cell-md", RECOMMEND_CELL_MD)
+        .context("compiling recommend-cell.md.tmpl")?;
+
     let ctx_owned = build_context(runs)?;
     let timestamp = chrono::Utc::now().to_rfc3339();
     let cell_count = count_unique_cells(runs);
+
+    // Phase 8 / Plan 02 / CELL-04 — visible/collapsed split. `split` caps
+    // at the actual top_n length so a fixture with `top_n.len() < TOP_N_TABLE`
+    // produces a non-panicking empty `collapsed` slice (Test 3 covers
+    // the empty-top_n branch via `has_top_n: false`).
+    let split = top_n.len().min(TOP_N_TABLE);
+    let visible_ctxs: Vec<CellTemplateContext> = top_n[..split]
+        .iter()
+        .map(build_cell_template_context)
+        .collect();
+    let collapsed_ctxs: Vec<CellTemplateContext> = top_n[split..]
+        .iter()
+        .map(build_cell_template_context)
+        .collect();
+
     let ctx = HtmlContext {
         results_json: &ctx_owned.results,
         scenarios_json: &ctx_owned.scenarios,
@@ -318,8 +390,31 @@ fn render(runs: &[Run]) -> Result<String> {
         timestamp_iso8601: &timestamp,
         plotly_cdn_url: PLOTLY_CDN_URL,
         plotly_sri_hash: PLOTLY_SRI_HASH,
+        top_n_visible: &visible_ctxs,
+        top_n_collapsed: &collapsed_ctxs,
+        has_top_n: !top_n.is_empty(),
     };
     tt.render("index", &ctx).context("rendering index.html")
+}
+
+/// Phase 8 / Plan 02 / CELL-03 — render a single CellRecommendation
+/// through the per-cell HTML template. Used by `pub fn write`'s per-cell
+/// fragment loop to write `recommend-{rank:02d}-{alloc}-{env}.html`
+/// alongside `index.html`. Symmetrical with
+/// `markdown.rs::render_cell_md`.
+///
+/// Trailing `\n` on every fragment per CONTEXT.md "Specifics" ¶6
+/// (POSIX file convention; concatenable / cat-friendly).
+fn render_cell_html(cell: &CellRecommendation) -> Result<String> {
+    let mut tt = TinyTemplate::new();
+    tt.add_template("recommend-cell-html", RECOMMEND_CELL_HTML)
+        .context("compiling recommend-cell.html.tmpl")?;
+    let ctx = build_cell_template_context(cell);
+    let mut s = tt
+        .render("recommend-cell-html", &ctx)
+        .context("rendering recommend-cell.html")?;
+    s.push('\n');
+    Ok(s)
 }
 
 fn count_unique_cells(runs: &[Run]) -> usize {
@@ -410,11 +505,25 @@ mod tests {
     /// RESEARCH §Pitfall 1: a missed `\{` escape produces a TinyTemplate
     /// compile error. This test catches the regression at `cargo test`
     /// time instead of leaving it to a runtime mystery.
+    ///
+    /// Phase 8 / Plan 02: `index.html.tmpl` now `{{call recommend-cell-html
+    /// with cell}}`'s the per-cell template inside `{{for}}` loops. The
+    /// `{{call}}` directive is parsed at template-compile time (not
+    /// render time), but the **referenced template** must be registered
+    /// before render or `tt.render("index", ...)` returns
+    /// `tinytemplate::Error::CalledTemplateNotFound`. Registering all
+    /// three templates here keeps the compile gate green AND defends
+    /// against a future contributor adding `{{call recommend-cell-md ...}}`
+    /// from another template (T-08-04 mitigation).
     #[test]
     fn tinytemplate_compiles_index_template() {
         let mut tt = TinyTemplate::new();
         tt.add_template("index", TEMPLATE)
             .expect("template should compile — missed `\\{` escape?");
+        tt.add_template("recommend-cell-html", RECOMMEND_CELL_HTML)
+            .expect("recommend-cell.html.tmpl should compile");
+        tt.add_template("recommend-cell-md", RECOMMEND_CELL_MD)
+            .expect("recommend-cell.md.tmpl should compile");
     }
 
     /// Phase 8 / Plan 01 — compile gate for the per-cell templates. Mirrors
@@ -564,10 +673,16 @@ mod tests {
     /// `{ results_json | unescaped }` must NOT HTML-escape the JSON. The
     /// rendered string contains the literal `:` and `[` characters from
     /// the JSON, not `&#x3A;` / `&#x5B;`.
+    ///
+    /// Phase 8 / Plan 02: `render` signature now takes `top_n: &[CellRecommendation]`
+    /// — pass empty slice here so the `<section class="top-n-recommendations">`
+    /// block is omitted via `{{if has_top_n}}` (mirrors the empty-top_n
+    /// branch). Test 3 (`index_top_n_section_omitted_for_empty_top_n`)
+    /// asserts the omission explicitly.
     #[test]
     fn render_inlines_results_json_unescaped() {
         let run = make_test_run("system", None, "test", 50_000);
-        let html = render(&[run]).expect("render");
+        let html = render(&[run], &[]).expect("render");
         assert!(
             html.contains("\"schema_version\":1"),
             "rendered html missing schema_version key in inlined JSON"
@@ -642,7 +757,10 @@ mod tests {
         run.metrics.allocator_stats = serde_json::json!({
             "raw_dump": "</script><script>alert('xss')</script>"
         });
-        let html = render(&[run]).expect("render");
+        // Phase 8 / Plan 02: empty top_n preserves CR-01 escape testing
+        // surface — adding ranking data would obscure the inlined JSON
+        // assertions below.
+        let html = render(&[run], &[]).expect("render");
         // Negative: the unescaped script-terminator MUST NOT appear in
         // the rendered HTML — neither the literal `</script><script>`
         // (which would terminate the inline RESULTS block AND inject
@@ -684,5 +802,296 @@ mod tests {
             ctx.suspect_pairs,
             r#"["jemalloc·alloc-bench:jemalloc-alpine"]"#
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // Phase 8 / Plan 02 / CELL-04 — `<section class="top-n-recommendations">`
+    // tests. Synthesizes minimal `CellRecommendation` instances directly
+    // (the per-cell template only references rank, alloc, env, tldr,
+    // strengths/weaknesses/recommended_for/avoid_for, suspect_flag — empty
+    // axes BTreeMap is OK).
+    // ---------------------------------------------------------------------
+
+    /// Build a synthetic `CellRecommendation` with the given rank/alloc/env.
+    /// `composite_score` matches the CONTEXT.md sentinel pattern (descending
+    /// from 0.789 by 0.033 per rank).
+    fn make_cell(rank: usize, alloc: &str, env: &str) -> CellRecommendation {
+        use std::collections::BTreeMap;
+        CellRecommendation {
+            rank,
+            alloc: alloc.to_string(),
+            env: env.to_string(),
+            composite_score: 0.789 - 0.033 * (rank as f64 - 1.0),
+            axes: BTreeMap::new(),
+            tldr: format!("synthetic-tldr-rank-{rank}"),
+            strengths: vec!["throughput", "latency"],
+            weaknesses: vec!["memory", "image-size"],
+            recommended_for: vec!["cpu-bound"],
+            avoid_for: vec!["memory-bound"],
+            suspect_flag: false,
+        }
+    }
+
+    /// Build a top_n vec of length `n` with deterministic alloc/env labels.
+    fn make_top_n(n: usize) -> Vec<CellRecommendation> {
+        let allocs = ["mimalloc", "jemalloc", "mallocng", "ptmalloc"];
+        let envs = ["alpine", "debian-slim", "wolfi"];
+        (1..=n)
+            .map(|rank| {
+                let alloc = allocs[(rank - 1) % allocs.len()];
+                let env = envs[(rank - 1) % envs.len()];
+                make_cell(rank, alloc, env)
+            })
+            .collect()
+    }
+
+    /// Test 1: rendered HTML contains `<section class="top-n-recommendations">`
+    /// AFTER `<section class="report-mirror">`; `<h2>Top 10 cells</h2>` once;
+    /// caption inside `<p>` tags.
+    #[test]
+    fn index_contains_top_n_recommendations_section() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let top_n = make_top_n(10);
+        let html = render(&[run], &top_n).expect("render");
+
+        // Section exists.
+        let top_n_idx = html
+            .find(r#"<section class="top-n-recommendations">"#)
+            .expect(&format!("missing top-n section in:\n{html}"));
+
+        // Sits AFTER the existing report-mirror section (string-position).
+        let report_mirror_idx = html
+            .find(r#"<section class="report-mirror">"#)
+            .expect(&format!("missing report-mirror section in:\n{html}"));
+        assert!(
+            report_mirror_idx < top_n_idx,
+            "top-n section ({top_n_idx}) must come AFTER report-mirror ({report_mirror_idx})"
+        );
+
+        // Heading appears exactly once.
+        let h2_count = html.matches("<h2>Top 10 cells</h2>").count();
+        assert_eq!(
+            h2_count, 1,
+            "expected exactly one `<h2>Top 10 cells</h2>` in:\n{html}"
+        );
+
+        // Caption verbatim, inside `<p>` tags.
+        assert!(
+            html.contains("<p>Ranked 1-10 by composite score (equal-weighted across 8 axes). Cards 6-10 collapsed by default.</p>"),
+            "missing caption in `<p>` tags in:\n{html}"
+        );
+    }
+
+    /// Test 2: 10-card top_n produces exactly 5 `<article class="recommend-card"`
+    /// openings BEFORE `<details>` (visible) and exactly 5 BETWEEN
+    /// `<details>` and `</details>` (collapsed). One `<details>` block,
+    /// one `</details>`, en-dash U+2013 in the summary.
+    #[test]
+    fn index_top_n_section_renders_visible_and_collapsed_cards() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let top_n = make_top_n(10);
+        let html = render(&[run], &top_n).expect("render");
+
+        // Single details block.
+        let details_open_count = html.matches("<details>").count();
+        let details_close_count = html.matches("</details>").count();
+        assert_eq!(
+            details_open_count, 1,
+            "expected exactly one `<details>` opening in:\n{html}"
+        );
+        assert_eq!(
+            details_close_count, 1,
+            "expected exactly one `</details>` closing in:\n{html}"
+        );
+
+        // Summary line with en-dash U+2013.
+        let summary_count = html
+            .matches("<summary>Show ranks 6\u{2013}10</summary>")
+            .count();
+        assert_eq!(
+            summary_count, 1,
+            "expected exactly one `<summary>Show ranks 6–10</summary>` in:\n{html}"
+        );
+
+        // Card-count split: 5 visible BEFORE <details>, 5 collapsed
+        // BETWEEN <details> and </details>. Anchor only on the
+        // `top-n-recommendations` section (the other surfaces in
+        // index.html may also use `<article>`).
+        let section_start = html
+            .find(r#"<section class="top-n-recommendations">"#)
+            .expect(&format!("missing top-n section in:\n{html}"));
+        let section_end = html[section_start..]
+            .find("</section>")
+            .map(|i| section_start + i)
+            .expect(&format!("missing closing </section> in:\n{html}"));
+        let section = &html[section_start..section_end];
+
+        let details_idx = section
+            .find("<details>")
+            .expect(&format!("missing <details> in section:\n{section}"));
+        let close_idx = section
+            .find("</details>")
+            .expect(&format!("missing </details> in section:\n{section}"));
+
+        let visible = &section[..details_idx];
+        let collapsed = &section[details_idx..close_idx];
+
+        let visible_card_count = visible.matches(r#"<article class="recommend-card""#).count();
+        let collapsed_card_count = collapsed
+            .matches(r#"<article class="recommend-card""#)
+            .count();
+
+        assert_eq!(
+            visible_card_count, 5,
+            "expected 5 visible cards before <details> in:\n{visible}"
+        );
+        assert_eq!(
+            collapsed_card_count, 5,
+            "expected 5 collapsed cards inside <details>...</details> in:\n{collapsed}"
+        );
+    }
+
+    /// Test 3: empty top_n -> the entire `<section class="top-n-recommendations">`
+    /// block is omitted via `{{if has_top_n}}` wrapper. v1.0 byte-identity
+    /// preserved (mirrors markdown's early-return symmetrically).
+    #[test]
+    fn index_top_n_section_omitted_for_empty_top_n() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let html = render(&[run], &[]).expect("render");
+
+        assert!(
+            !html.contains(r#"<section class="top-n-recommendations">"#),
+            "expected NO top-n section for empty top_n, got:\n{html}"
+        );
+        assert!(
+            !html.contains("<h2>Top 10 cells</h2>"),
+            "expected NO `<h2>Top 10 cells</h2>` for empty top_n, got:\n{html}"
+        );
+        // Sanity: existing report-mirror section IS still present (we only
+        // removed the new section, not anything pre-existing).
+        assert!(
+            html.contains(r#"<section class="report-mirror">"#),
+            "expected pre-existing `<section class=\"report-mirror\">` to remain, got:\n{html}"
+        );
+    }
+
+    /// Test 4: `pub fn write` writes 10 standalone `recommend-{rank:02d}-{alloc}-{env}.html`
+    /// fragments alongside index.html. Spot-check one fragment contains
+    /// `<article class="recommend-card"` and ends with `\n`.
+    ///
+    /// Uses `tempfile::tempdir()` (already in [dev-dependencies] per Cargo.toml).
+    #[test]
+    fn write_emits_per_cell_html_fragments() {
+        let runs = vec![make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        )];
+        let outcome = LoadOutcome {
+            runs,
+            skipped: vec![],
+        };
+        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        let top_n = make_top_n(10);
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write(&outcome, &metas, &top_n, tmp.path()).expect("write");
+
+        // Collect filenames matching `recommend-*.html`.
+        let mut fragment_names: Vec<String> = std::fs::read_dir(tmp.path())
+            .expect("read_dir")
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("recommend-") && name.ends_with(".html") {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        fragment_names.sort();
+        assert_eq!(
+            fragment_names.len(),
+            10,
+            "expected exactly 10 recommend-*.html fragments, got: {fragment_names:?}"
+        );
+
+        // Filename pattern: rank zero-padded 01..=10.
+        for (i, name) in fragment_names.iter().enumerate() {
+            let expected_prefix = format!("recommend-{:02}-", i + 1);
+            assert!(
+                name.starts_with(&expected_prefix),
+                "fragment {i} name `{name}` doesn't start with `{expected_prefix}`"
+            );
+            assert!(
+                name.ends_with(".html"),
+                "fragment {i} name `{name}` doesn't end with `.html`"
+            );
+        }
+
+        // Spot-check rank-01 fragment contents.
+        let rank_01_path = tmp
+            .path()
+            .read_dir()
+            .expect("read_dir")
+            .filter_map(|e| e.ok())
+            .find(|e| {
+                let n = e.file_name().to_string_lossy().to_string();
+                n.starts_with("recommend-01-") && n.ends_with(".html")
+            })
+            .expect("rank-01 fragment");
+        let body = std::fs::read_to_string(rank_01_path.path()).expect("read");
+        assert!(
+            body.contains(r#"<article class="recommend-card""#),
+            "rank-01 fragment missing `<article class=\"recommend-card\"`:\n{body}"
+        );
+        assert!(
+            body.ends_with('\n'),
+            "rank-01 fragment must end with `\\n` (POSIX trailing newline):\n{body:?}"
+        );
+    }
+
+    /// Test 5: full register-and-render path with a non-empty top_n
+    /// exercises the `{{call recommend-cell-html with cell}}` directive.
+    /// If a future contributor breaks the `{{call}}` (typo, missing
+    /// registration, dropped `with cell` syntax), this test fails at
+    /// `cargo test` time with a clear `tinytemplate::Error`.
+    #[test]
+    fn tinytemplate_renders_index_with_top_n_section() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let top_n = make_top_n(10);
+        let html = render(&[run], &top_n).expect("render with top_n must succeed");
+
+        // The `{{call recommend-cell-html with cell}}` invocations
+        // produced 10 articles with proper rank-padded ids.
+        for rank in 1..=10 {
+            let id_prefix = format!(r#"id="recommend-{:02}-"#, rank);
+            assert!(
+                html.contains(&id_prefix),
+                "missing `{id_prefix}...` rank-padded article id in:\n{html}"
+            );
+        }
     }
 }

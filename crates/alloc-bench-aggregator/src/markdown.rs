@@ -29,44 +29,78 @@ use std::path::Path;
 
 use alloc_bench_core::output::{Env, HarnessInfo, Run};
 use anyhow::{Context, Result};
+use tinytemplate::TinyTemplate;
 
 use crate::diagrams::ALL_DIAGRAMS;
-use crate::html::is_suspect;
+use crate::html::{build_cell_template_context, is_suspect, RECOMMEND_CELL_MD};
 use crate::loader::{CellMeta, LoadOutcome};
 use crate::multi_run::{aggregate as mr_aggregate, is_high_variance, MultiRunStats};
-use crate::recommend::recommendations;
+use crate::recommend::{recommendations, CellRecommendation, TOP_N_TABLE};
 
 /// Public entry point — write `report/REPORT.md` against the loaded
 /// outcome. Builds the buffer end-to-end via `build_report()` then
 /// commits to disk. The two-step shape lets the byte-identical test
 /// (Behavior 13) compare two builds without touching the filesystem.
+///
+/// Phase 8 / Plan 02 (CELL-03): after `REPORT.md`, also write 10
+/// standalone single-card `.md` fragments to
+/// `report/recommend-{rank:02d}-{alloc}-{env}.md` (one per top-N cell)
+/// for future drilldown-link surfaces (V12-04 deferred).
 pub fn write(
     outcome: &LoadOutcome,
     metas: &HashMap<(String, String), CellMeta>,
+    top_n: &[CellRecommendation],
     out_dir: &Path,
 ) -> Result<()> {
-    let buf = build_report(outcome, metas);
+    let buf = build_report(outcome, metas, top_n)?;
     let out_path = out_dir.join("REPORT.md");
     std::fs::write(&out_path, &buf).with_context(|| format!("writing {}", out_path.display()))?;
+
+    // Phase 8 / Plan 02 / CELL-03 — per-cell standalone Markdown fragments.
+    // Filename pattern locked: `recommend-{rank:02d}-{alloc}-{env}.md`
+    // (CONTEXT.md "Filenames & Per-cell Artifacts"; rank zero-padded for
+    // natural filename sort; cell.env is already short-form per Phase 7
+    // plumbing, recommend.rs:659).
+    for cell in top_n.iter() {
+        let frag = render_cell_md(cell)?;
+        let frag_path = out_dir.join(format!(
+            "recommend-{:02}-{}-{}.md",
+            cell.rank, cell.alloc, cell.env
+        ));
+        std::fs::write(&frag_path, &frag)
+            .with_context(|| format!("writing {}", frag_path.display()))?;
+    }
     Ok(())
 }
 
 /// Build the complete REPORT.md as a String. Factored from `write()` so
 /// the byte-identical-output test can call it twice without disk I/O.
+///
+/// Phase 8 / Plan 02: returns `Result<String>` (was `String`) so render
+/// errors from `emit_top_n_cells` (tinytemplate compile/render failures)
+/// propagate via `?`. Existing single-run-per-cell golden fixtures are
+/// preserved via the early-return-on-empty-top_n discipline in
+/// `emit_top_n_cells` (Q3 RESOLVED — see 08-RESEARCH §Section 6).
 pub(crate) fn build_report(
     outcome: &LoadOutcome,
     metas: &HashMap<(String, String), CellMeta>,
-) -> String {
+    top_n: &[CellRecommendation],
+) -> Result<String> {
     let mut buf = String::new();
     emit_header(&mut buf, outcome);
     emit_per_scenario_tables(&mut buf, &outcome.runs);
     emit_docker_runtimes_table(&mut buf, &outcome.runs, metas);
     emit_allocator_diagrams(&mut buf);
     emit_recommendations(&mut buf, &outcome.runs);
+    // Phase 8 / Plan 02 / CELL-04 — Top 10 cells AFTER recommendations
+    // (Q1 lock — see 08-RESEARCH §Section 6). Empty top_n early-returns
+    // from `emit_top_n_cells` so v1.0 byte-identical golden fixtures
+    // continue to pass for synthetic outcomes that carry zero scoring data.
+    emit_top_n_cells(&mut buf, top_n)?;
     if !outcome.skipped.is_empty() {
         emit_skipped(&mut buf, &outcome.skipped);
     }
-    buf
+    Ok(buf)
 }
 
 fn emit_header(buf: &mut String, outcome: &LoadOutcome) {
@@ -349,6 +383,111 @@ fn emit_recommendations(buf: &mut String, runs: &[Run]) {
     let _ = writeln!(buf);
 }
 
+/// Phase 8 / Plan 02 / CELL-04 — `## Top 10 cells` section emit.
+///
+/// Inserts AFTER `emit_recommendations` (Q1 lock — see 08-RESEARCH §Section 6).
+/// Composition (per UI-SPEC §Layout & Interaction):
+///   - section heading + caption
+///   - leading `| Rank | Cell | Score |` summary table (Q3 RESOLVED in-scope)
+///   - top-`TOP_N_TABLE` (5) cards always visible, separated by `---` rules
+///   - cards 6-10 inside a single `<details><summary>Show ranks 6–10</summary>`
+///     block (en-dash U+2013 between 6 and 10)
+///
+/// Empty-`top_n` early-return preserves v1.0 byte-identical golden fixtures
+/// where synthetic outcomes have zero scoring data — no bytes appended.
+/// Symmetrical with the HTML side's `{{if has_top_n}}` wrapper (Plan 02 Task 2).
+///
+/// Returns `Result<()>` to propagate `tinytemplate` render errors from
+/// `render_cell_md` via `?`. Cascades up through `build_report`'s
+/// `Result<String>` return type to `pub fn write`.
+fn emit_top_n_cells(buf: &mut String, top_n: &[CellRecommendation]) -> Result<()> {
+    if top_n.is_empty() {
+        return Ok(());
+    }
+
+    let _ = writeln!(buf, "## Top 10 cells");
+    let _ = writeln!(buf);
+    let _ = writeln!(
+        buf,
+        "Ranked 1-10 by composite score (equal-weighted across 8 axes). Cards 6-10 collapsed by default."
+    );
+    let _ = writeln!(buf);
+
+    // Leading `| Rank | Cell | Score |` summary table (Q3 RESOLVED in-scope —
+    // see 08-RESEARCH §Section 6 / 08-CONTEXT.md "Specifics"). The table is
+    // the only surface where `composite_score` is visible (per CELL-05 the
+    // cards themselves don't show it). `{:.3}` precision matches the
+    // CONTEXT.md sentinel test value `0.789`.
+    let _ = writeln!(buf, "| Rank | Cell | Score |");
+    let _ = writeln!(buf, "|------|------|-------|");
+    for cell in top_n.iter() {
+        let _ = writeln!(
+            buf,
+            "| {:02} | {} on {} | {:.3} |",
+            cell.rank, cell.alloc, cell.env, cell.composite_score
+        );
+    }
+    let _ = writeln!(buf);
+
+    // Visible/collapsed split — handles `top_n.len() < TOP_N_TABLE` gracefully
+    // by capping the visible count at the actual length.
+    let split = top_n.len().min(TOP_N_TABLE);
+
+    // Top-`TOP_N_TABLE` (5) cards always visible. Separated by `---` between
+    // consecutive cards (NOT after the final visible card).
+    let visible = &top_n[..split];
+    for (i, cell) in visible.iter().enumerate() {
+        buf.push_str(&render_cell_md(cell)?);
+        if i + 1 < visible.len() {
+            let _ = writeln!(buf, "---");
+            let _ = writeln!(buf);
+        }
+    }
+
+    // Cards `TOP_N_TABLE+1`..=`TOP_N_TOTAL` inside `<details>` block (only if
+    // any collapsed cards exist).
+    if top_n.len() > TOP_N_TABLE {
+        let _ = writeln!(buf);
+        let _ = writeln!(buf, "<details>");
+        // En-dash U+2013 between 6 and 10 per UI-SPEC §Top-10-cells
+        // composition. The summary text is content for `<details>`'s GFM
+        // disclosure widget.
+        let _ = writeln!(buf, "<summary>Show ranks 6\u{2013}10</summary>");
+        let _ = writeln!(buf);
+        let collapsed = &top_n[TOP_N_TABLE..];
+        for (i, cell) in collapsed.iter().enumerate() {
+            buf.push_str(&render_cell_md(cell)?);
+            if i + 1 < collapsed.len() {
+                let _ = writeln!(buf, "---");
+                let _ = writeln!(buf);
+            }
+        }
+        let _ = writeln!(buf, "</details>");
+        let _ = writeln!(buf);
+    }
+
+    Ok(())
+}
+
+/// Phase 8 / Plan 02 / CELL-03 — render a single CellRecommendation
+/// through the per-cell Markdown template. Used by `emit_top_n_cells`
+/// (in-document section) and by `pub fn write`'s per-cell fragment
+/// loop.
+///
+/// Trailing `\n` on every fragment per CONTEXT.md "Specifics" ¶6
+/// (POSIX file convention; concatenable / cat-friendly).
+fn render_cell_md(cell: &CellRecommendation) -> Result<String> {
+    let mut tt = TinyTemplate::new();
+    tt.add_template("recommend-cell-md", RECOMMEND_CELL_MD)
+        .context("compiling recommend-cell.md.tmpl")?;
+    let ctx = build_cell_template_context(cell);
+    let mut s = tt
+        .render("recommend-cell-md", &ctx)
+        .context("rendering recommend-cell.md")?;
+    s.push('\n');
+    Ok(s)
+}
+
 fn emit_skipped(buf: &mut String, skipped: &[crate::loader::SkippedFile]) {
     let _ = writeln!(buf, "## Skipped inputs");
     let _ = writeln!(buf);
@@ -608,6 +747,11 @@ mod tests {
 
     /// D-09 byte-identical-output contract: two builds against the same
     /// outcome differ only in the leading schema_version timestamp line.
+    ///
+    /// Phase 8 / Plan 02 update: `build_report` now returns `Result<String>`
+    /// (was `String`) — call `.expect("byte-identity test")` on each. Empty
+    /// `top_n` is passed so `emit_top_n_cells` early-returns and adds zero
+    /// bytes (preserves v1.0 byte-identity for synthetic-no-scores fixtures).
     #[test]
     fn report_md_two_runs_byte_identical_after_timestamp_strip() {
         let runs = vec![
@@ -620,8 +764,9 @@ mod tests {
             skipped: vec![],
         };
         let metas: HashMap<(String, String), CellMeta> = HashMap::new();
-        let a = build_report(&outcome, &metas);
-        let b = build_report(&outcome, &metas);
+        let top_n: Vec<CellRecommendation> = Vec::new();
+        let a = build_report(&outcome, &metas, &top_n).expect("byte-identity test");
+        let b = build_report(&outcome, &metas, &top_n).expect("byte-identity test");
         // Strip the FIRST line (schema_version comment) from each.
         let strip_first = |s: &str| -> String {
             let mut lines = s.splitn(2, '\n');
@@ -856,6 +1001,312 @@ mod tests {
         assert!(
             !buf.contains("populated from CI sidecar"),
             "did not expect D-13 footnote when metas empty:\n{buf}"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Phase 8 / Plan 02 / CELL-04 — `## Top 10 cells` section emit tests.
+    //
+    // Synthesizes minimal `CellRecommendation` instances directly (the
+    // per-cell template only references rank, alloc, env, tldr,
+    // strengths/weaknesses/recommended_for/avoid_for, suspect_flag — empty
+    // axes BTreeMap is OK).
+    // ---------------------------------------------------------------------
+
+    /// Build a synthetic `CellRecommendation` with the given rank/alloc/env.
+    /// `composite_score` matches the CONTEXT.md sentinel pattern (0.789 for
+    /// rank 1, descending) so Test 5 can assert `{:.3}` formatting.
+    fn make_cell(rank: usize, alloc: &str, env: &str) -> CellRecommendation {
+        CellRecommendation {
+            rank,
+            alloc: alloc.to_string(),
+            env: env.to_string(),
+            // Composite-score sentinel: rank 1 → 0.789; descending by 0.033
+            // per rank so `{:.3}` formatting renders three distinct decimals.
+            composite_score: 0.789 - 0.033 * (rank as f64 - 1.0),
+            axes: BTreeMap::new(),
+            tldr: format!("synthetic-tldr-rank-{rank}"),
+            strengths: vec!["throughput", "latency"],
+            weaknesses: vec!["memory", "image-size"],
+            recommended_for: vec!["cpu-bound"],
+            avoid_for: vec!["memory-bound"],
+            suspect_flag: false,
+        }
+    }
+
+    /// Build a top_n vec of length `n` with deterministic alloc/env labels.
+    /// Uses the four canonical allocators × short env names so cards have
+    /// non-empty, byte-stable rendered output.
+    fn make_top_n(n: usize) -> Vec<CellRecommendation> {
+        let allocs = ["mimalloc", "jemalloc", "mallocng", "ptmalloc"];
+        let envs = ["alpine", "debian-slim", "wolfi"];
+        (1..=n)
+            .map(|rank| {
+                let alloc = allocs[(rank - 1) % allocs.len()];
+                let env = envs[(rank - 1) % envs.len()];
+                make_cell(rank, alloc, env)
+            })
+            .collect()
+    }
+
+    /// Test 1: 10-cell top_n splits visible/collapsed at TOP_N_TABLE=5.
+    #[test]
+    fn emit_top_n_cells_section_splits_at_top_n_table() {
+        let top_n = make_top_n(10);
+        let mut buf = String::new();
+        emit_top_n_cells(&mut buf, &top_n).expect("emit");
+
+        // Section heading + caption verbatim.
+        assert!(
+            buf.contains("## Top 10 cells"),
+            "missing section heading in:\n{buf}"
+        );
+        assert!(
+            buf.contains("Ranked 1-10 by composite score (equal-weighted across 8 axes). Cards 6-10 collapsed by default."),
+            "missing section caption verbatim in:\n{buf}"
+        );
+
+        // `<details>` / `<summary>` with en-dash.
+        let details_idx = buf
+            .find("<details>")
+            .expect(&format!("missing <details> in:\n{buf}"));
+        let summary_count = buf
+            .matches("<summary>Show ranks 6\u{2013}10</summary>")
+            .count();
+        assert_eq!(
+            summary_count, 1,
+            "expected exactly one summary line with en-dash 6–10 in:\n{buf}"
+        );
+        let close_idx = buf
+            .find("</details>")
+            .expect(&format!("missing </details> in:\n{buf}"));
+        assert!(
+            close_idx > details_idx,
+            "</details> must come after <details> in:\n{buf}"
+        );
+
+        // Visible cards (ranks 1..=5) appear BEFORE <details>; collapsed
+        // cards (ranks 6..=10) appear AFTER it.
+        for rank in 1..=5 {
+            let needle = format!("synthetic-tldr-rank-{rank}");
+            let idx = buf
+                .find(&needle)
+                .expect(&format!("missing visible rank-{rank} tldr in:\n{buf}"));
+            assert!(
+                idx < details_idx,
+                "rank {rank} tldr must appear BEFORE <details> in:\n{buf}"
+            );
+        }
+        for rank in 6..=10 {
+            let needle = format!("synthetic-tldr-rank-{rank}");
+            let idx = buf
+                .find(&needle)
+                .expect(&format!("missing collapsed rank-{rank} tldr in:\n{buf}"));
+            assert!(
+                idx > details_idx,
+                "rank {rank} tldr must appear AFTER <details> in:\n{buf}"
+            );
+            assert!(
+                idx < close_idx,
+                "rank {rank} tldr must appear BEFORE </details> in:\n{buf}"
+            );
+        }
+
+        // Exactly four `---` separators between visible cards (1-2, 2-3,
+        // 3-4, 4-5) and exactly four between collapsed cards (6-7, 7-8,
+        // 8-9, 9-10) → 8 total inside the section.
+        let visible_section = &buf[..details_idx];
+        let visible_section_start = visible_section
+            .find("## Top 10 cells")
+            .expect("section start");
+        // Strip everything before the first card to count only intra-card
+        // separators (NOT the leading-summary-table separator `|------|...`).
+        let first_card_idx = visible_section
+            .find("synthetic-tldr-rank-1")
+            .expect("first visible card");
+        let _ = visible_section_start; // anchor sanity, not used in the count
+        let between_visible = &visible_section[first_card_idx..];
+        let visible_seps = between_visible.matches("\n---\n").count();
+        assert_eq!(
+            visible_seps, 4,
+            "expected 4 `---` separators between visible cards (1-2, 2-3, 3-4, 4-5) in:\n{between_visible}"
+        );
+        // Between collapsed cards (after <details>, before </details>).
+        let collapsed_section = &buf[details_idx..close_idx];
+        let collapsed_seps = collapsed_section.matches("\n---\n").count();
+        assert_eq!(
+            collapsed_seps, 4,
+            "expected 4 `---` separators between collapsed cards (6-7..9-10) in:\n{collapsed_section}"
+        );
+    }
+
+    /// Test 2: top_n length 3 → no `<details>` block, three cards with two
+    /// `---` separators, leading summary table has exactly 3 data rows.
+    #[test]
+    fn emit_top_n_cells_handles_fewer_than_ten_cells() {
+        let top_n = make_top_n(3);
+        let mut buf = String::new();
+        emit_top_n_cells(&mut buf, &top_n).expect("emit");
+
+        assert!(
+            !buf.contains("<details>"),
+            "expected NO <details> block when top_n.len() < TOP_N_TABLE+1, got:\n{buf}"
+        );
+        assert!(
+            !buf.contains("<summary>"),
+            "expected NO <summary> when top_n.len() < TOP_N_TABLE+1, got:\n{buf}"
+        );
+
+        // Three cards (ranks 1, 2, 3).
+        for rank in 1..=3 {
+            let needle = format!("synthetic-tldr-rank-{rank}");
+            assert!(
+                buf.contains(&needle),
+                "missing rank-{rank} tldr in:\n{buf}"
+            );
+        }
+
+        // Two `---` separators (between 1-2 and 2-3).
+        let sep_count = buf.matches("\n---\n").count();
+        assert_eq!(
+            sep_count, 2,
+            "expected exactly 2 `---` separators for top_n.len()=3 in:\n{buf}"
+        );
+
+        // Leading summary table has exactly 3 data rows (in addition to
+        // header row `| Rank | Cell | Score |` and separator row).
+        // Each data row matches the pattern `| 0X | <alloc> on <env> | 0.YYY |`.
+        let table_start = buf
+            .find("| Rank | Cell | Score |")
+            .expect("missing summary header");
+        // The table extends until the first card (`### 1. ...`).
+        let first_card = buf.find("### 1. ").expect("missing first card heading");
+        let table_section = &buf[table_start..first_card];
+        // Count rows starting with `| 0` (matching `| 01 ` / `| 02 ` / `| 03 `).
+        let data_rows = table_section
+            .lines()
+            .filter(|l| {
+                l.starts_with("| 0")
+                    && !l.starts_with("|----")
+                    && !l.starts_with("| Rank")
+            })
+            .count();
+        assert_eq!(
+            data_rows, 3,
+            "expected 3 data rows in summary table for top_n.len()=3 in:\n{table_section}"
+        );
+    }
+
+    /// Test 3: a cell with `suspect_flag = true` emits the literal
+    /// six-byte `*(suspect)*` substring on its rank line.
+    #[test]
+    fn emit_top_n_cells_emits_suspect_suffix_for_flagged_cells() {
+        let mut cell = make_cell(1, "mimalloc", "alpine");
+        cell.suspect_flag = true;
+        let top_n = vec![cell];
+        let mut buf = String::new();
+        emit_top_n_cells(&mut buf, &top_n).expect("emit");
+
+        assert!(
+            buf.contains("*(suspect)*"),
+            "expected literal `*(suspect)*` substring for suspect-flagged cell in:\n{buf}"
+        );
+    }
+
+    /// Test 4: build_report inserts ## Top 10 cells AFTER ## Recommendations
+    /// by workload AND BEFORE ## Skipped inputs (when present).
+    #[test]
+    fn build_report_inserts_top_n_after_recommendations_before_skipped() {
+        let runs = vec![
+            make_run("jemalloc", "cpu-bound", 100.0, 50_000, 5.0, Some("img-a")),
+            make_run("ptmalloc", "cpu-bound", 80.0, 50_000, 5.0, Some("img-b")),
+        ];
+        let skipped = vec![crate::loader::SkippedFile {
+            path: std::path::PathBuf::from("test.json"),
+            reason: "synthetic skip".to_string(),
+        }];
+        let outcome = LoadOutcome { runs, skipped };
+        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        let top_n = make_top_n(10);
+        let buf =
+            build_report(&outcome, &metas, &top_n).expect("build_report should succeed");
+
+        let recommendations_idx = buf
+            .find("## Recommendations by workload")
+            .expect(&format!("missing ## Recommendations by workload:\n{buf}"));
+        let top_n_idx = buf
+            .find("## Top 10 cells")
+            .expect(&format!("missing ## Top 10 cells:\n{buf}"));
+        let skipped_idx = buf
+            .find("## Skipped inputs")
+            .expect(&format!("missing ## Skipped inputs:\n{buf}"));
+
+        assert!(
+            recommendations_idx < top_n_idx,
+            "recommendations ({recommendations_idx}) must precede top_n ({top_n_idx}) in:\n{buf}"
+        );
+        assert!(
+            top_n_idx < skipped_idx,
+            "top_n ({top_n_idx}) must precede skipped ({skipped_idx}) in:\n{buf}"
+        );
+
+        // No reorder: per-scenario tables must still come before recommendations.
+        let cpu_bound_idx = buf
+            .find("## cpu-bound")
+            .expect(&format!("missing ## cpu-bound section:\n{buf}"));
+        assert!(
+            cpu_bound_idx < recommendations_idx,
+            "per-scenario tables must precede recommendations (no reorder) in:\n{buf}"
+        );
+    }
+
+    /// Test 5: leading `| Rank | Cell | Score |` summary table sits between
+    /// the section caption and the first card body. Exactly 10 data rows
+    /// for top_n.len()=10, matching `\| 0X | <alloc> on <env> | 0.YYY |`
+    /// formatting.
+    #[test]
+    fn top_n_section_starts_with_summary_table() {
+        let top_n = make_top_n(10);
+        let mut buf = String::new();
+        emit_top_n_cells(&mut buf, &top_n).expect("emit");
+
+        let section_start = buf
+            .find("## Top 10 cells")
+            .expect(&format!("missing section heading:\n{buf}"));
+        let first_card = buf.find("### 1. ").expect(&format!(
+            "missing first-card heading `### 1. `:\n{buf}"
+        ));
+        assert!(
+            section_start < first_card,
+            "section heading must come before first card in:\n{buf}"
+        );
+
+        let between = &buf[section_start..first_card];
+        // Header + separator rows.
+        assert!(
+            between.contains("| Rank | Cell | Score |"),
+            "missing summary table header in:\n{between}"
+        );
+        assert!(
+            between.contains("|------|------|-------|"),
+            "missing summary table separator in:\n{between}"
+        );
+
+        // 10 data rows matching `| 0X | <alloc> on <env> | 0.YYY |`.
+        // Anchor the regex via simple substring checks over each rank.
+        for rank in 1..=10 {
+            let prefix = format!("| {:02} | ", rank);
+            assert!(
+                between.contains(&prefix),
+                "missing rank-{rank} row prefix `{prefix}` in:\n{between}"
+            );
+        }
+
+        // {:.3} score precision — at least the rank-1 score `0.789` should
+        // appear verbatim (matches CONTEXT.md sentinel and the Test fixture).
+        assert!(
+            between.contains("| 0.789 |"),
+            "expected rank-1 score `| 0.789 |` ({{:.3}}) in:\n{between}"
         );
     }
 }
