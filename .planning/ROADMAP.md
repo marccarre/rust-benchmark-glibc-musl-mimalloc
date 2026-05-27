@@ -79,8 +79,18 @@ Plans:
   4. User reads `report/REPORT.md` and finds a new `## Top 10 cells` section with the top-5 recommendation cards above the fold and the remaining 5 inside a collapsible `<details>` block (Cowan's 4±1 working-memory bound)
   5. User reads each per-cell artifact and finds the structure: TL;DR (1 sentence) → Strengths → Weaknesses → Recommended-for → Avoid-for, 80–150 words total, data-derived (no hand-edited prose strings — the `*(suspect)*` italic suffix from v1.0 is the only allowed annotation)
 
-**Plans:** TBD
+**Plans:** 2 plans
 **UI hint**: yes
+
+Plans:
+
+**Wave 1**
+
+- [ ] 08-01-PLAN.md — recommend-cell.{md,html}.tmpl + CellTemplateContext + WR-01 sentinel test (CELL-01, CELL-02, CELL-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 08-02-PLAN.md — main.rs wiring + emit_top_n_cells + index.html.tmpl <section> + per-cell .md/.html fragment writes (CELL-03, CELL-04, CELL-05)
 
 ### Phase 9: Spider Chart
 
@@ -174,7 +184,7 @@ Plans:
 | 5.1. UAT Gap Closure | post-v1.0 | 2/2 | Complete   | 2026-05-22 |
 | 6. Foundations | v1.1 | 0/3 | Not started | - |
 | 7. Scoring & Top-N | v1.1 | 2/2 | Complete   | 2026-05-26 |
-| 8. Per-cell Artifacts | v1.1 | 0/? | Not started | - |
+| 8. Per-cell Artifacts | v1.1 | 0/2 | Not started | - |
 | 9. Spider Chart | v1.1 | 0/? | Not started | - |
 | 10. Direction Markers | v1.1 | 0/? | Not started | - |
 | 11. Golden-fixture Regen | v1.1 | 0/? | Not started | - |
