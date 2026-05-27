@@ -167,6 +167,13 @@ pub(crate) struct CellTemplateContext {
     pub recommended_for: Vec<&'static str>,
     pub avoid_for: Vec<&'static str>,
     pub suspect_flag: bool,
+    /// Phase 9 / POLAR-05 — true iff `(alloc, env)` sits on the Pareto
+    /// front (composite_score↑ × image_size_mb↓ strict-dominance sweep,
+    /// computed by `score::pareto_front` and decorated onto each
+    /// `CellRecommendation` by `recommend::top_n_cells`). Renders as a
+    /// trailing `★` glyph in both per-cell templates so REPORT.md and
+    /// index.html agree on which cells deserve the front-marker.
+    pub is_pareto: bool,
 }
 
 /// Phase 8 / Plan 01 — convert a `CellRecommendation` (Phase 7
@@ -186,6 +193,7 @@ pub(crate) fn build_cell_template_context(cell: &CellRecommendation) -> CellTemp
         recommended_for: cell.recommended_for.clone(),
         avoid_for: cell.avoid_for.clone(),
         suspect_flag: cell.suspect_flag,
+        is_pareto: cell.is_pareto,
     }
 }
 

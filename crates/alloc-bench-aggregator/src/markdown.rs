@@ -418,13 +418,24 @@ fn emit_top_n_cells(buf: &mut String, top_n: &[CellRecommendation]) -> Result<()
     // the only surface where `composite_score` is visible (per CELL-05 the
     // cards themselves don't show it). `{:.3}` precision matches the
     // CONTEXT.md sentinel test value `0.789`.
-    let _ = writeln!(buf, "| Rank | Cell | Score |");
-    let _ = writeln!(buf, "|------|------|-------|");
+    // Phase 9 / POLAR-05 — Pareto column. `\u{2605}` (★) glyph renders for
+    // cells on the front (composite_score↑ × image_size_mb↓ strict-dominance
+    // sweep, computed by `score::pareto_front` and decorated onto each
+    // `CellRecommendation` by `recommend::top_n_cells` per Plan 09-02). The
+    // column matches the per-cell template trailing-★ in
+    // `recommend-cell.md.tmpl` so the summary table and the detailed cards
+    // agree byte-for-byte on Pareto-front membership (WR-01 cross-surface
+    // drift defense). Empty image_sizes (CI-without-meta path) yields all
+    // cells `is_pareto: false` → all rows render an empty cell, preserving
+    // v1.0 byte-identical output until the meta sidecar is wired.
+    let _ = writeln!(buf, "| Rank | Cell | Score | Pareto |");
+    let _ = writeln!(buf, "|------|------|-------|--------|");
     for cell in top_n.iter() {
+        let pareto_glyph = if cell.is_pareto { "\u{2605}" } else { "" };
         let _ = writeln!(
             buf,
-            "| {:02} | {} on {} | {:.3} |",
-            cell.rank, cell.alloc, cell.env, cell.composite_score
+            "| {:02} | {} on {} | {:.3} | {} |",
+            cell.rank, cell.alloc, cell.env, cell.composite_score, pareto_glyph
         );
     }
     let _ = writeln!(buf);
