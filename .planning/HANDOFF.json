@@ -1,11 +1,6 @@
 {
   "version": "1.0",
-  "schema_version": 1,
-  "timestamp": "2026-05-27T19:46:08.420Z",
-  "generated_at": "2026-05-27T19:46:08.420Z",
-  "context": "phase",
-  "milestone": "v1.1",
-  "milestone_name": "Recommendations, Spider Charts & Direction Markers",
+  "timestamp": "2026-05-27T20:45:37.654Z",
   "phase": "09",
   "phase_name": "Spider Chart",
   "phase_dir": ".planning/phases/09-spider-chart",
@@ -13,84 +8,44 @@
   "task": null,
   "total_tasks": null,
   "status": "paused",
-  "stopped_at": "context warning at 79% during plan-phase initialization (2026-05-27); discuss + ui-spec done, plan-phase not started",
-  "branch": "main",
-  "head_commit": "46748d6",
-  "head_subject": "docs(09): UI design contract — spider chart + Pareto column",
   "completed_tasks": [
-    {"id": 1, "name": "Phase 7 (Scoring & Top-N) completed and committed", "status": "done", "commit": null, "notes": "Resumed from prior pause; plans applied, checker PASSED, executed both waves (score.rs + recommend.rs), verified."},
-    {"id": 2, "name": "Phase 8 (Per-cell artifacts) completed and committed", "status": "done", "commit": "4c17372", "notes": "Verifier PASS, 5/5 must-haves. Top-N wired, per-cell .html fragments emitted. NOTE: 08-VERIFICATION.md remains untracked on disk (pre-existing)."},
-    {"id": 3, "name": "Phase 9 smart discuss (09-CONTEXT.md)", "status": "done", "commit": "ee7934f", "notes": "26 decisions across 5 grey areas: spider chart layout (1×3 grid, 340×340 square, autosize+responsive), heuristic axis distinction ((heuristic) suffix + #666 tickfont), Pareto-front overlay & tests (POLAR-05 IN SCOPE; ★ U+2605 glyph), polar.rs module shape (returns serde_json::Value), Plotly v2.35.3 SRI-pinned (no JS beyond pinned CDN). User accepted all recommended answers across all 3 user-facing areas."},
-    {"id": 4, "name": "Phase 9 UI design contract (09-UI-SPEC.md)", "status": "done", "commit": "46748d6", "notes": "gsd-ui-researcher produced UI-SPEC; gsd-ui-checker scored 5 PASS / 1 FLAG (Plotly internal margins {l:30,r:30,t:40,b:30} not multiples of 4 — justified by Plotly defaults) / 1 SKIPPED (ui_safety_gate=false). Inherits v1.0 design tokens; <section class=\"spider-chart\"> mirrors Phase 8's .top-n-recommendations; pinned Plotly v2.35.3 SHA-384 SRI; safety gate via html::tests::plotly_sri_hash_unchanged."}
+    {"id": "discuss-phase", "name": "Smart discuss — 26 locked decisions", "status": "done", "commit": "ee7934f"},
+    {"id": "ui-phase", "name": "UI design contract (UI-SPEC.md)", "status": "done", "commit": "46748d6"},
+    {"id": "research", "name": "RESEARCH.md — polar.rs API, scatterpolar shape, Pareto algorithm", "status": "done", "commit": "323f9d2"},
+    {"id": "pattern-mapping", "name": "PATTERNS.md — analog files + disambiguation", "status": "done", "commit": null},
+    {"id": "planning", "name": "3 PLAN.md files written (09-01 polar.rs / 09-02 pareto+CellRecommendation / 09-03 HTML wiring)", "status": "done", "commit": null},
+    {"id": "plan-checker", "name": "Plan checker reviewed: 1 false-positive blocker (Nyquist gate fired despite nyquist_validation:false), 4 warnings", "status": "done", "commit": null},
+    {"id": "checker-fixes", "name": "2 surgical fixes applied to plans (09-02 self-contradicting acceptance criterion reworded; 09-03 tickfont.color #222 -> #666 per RESEARCH §2)", "status": "done", "commit": null}
   ],
   "remaining_tasks": [
-    {"id": 5, "name": "Phase 9 plan-phase: research → planner → plan-checker → revise to PASS", "status": "not_started", "notes": "Resume here. Researcher will read 09-CONTEXT.md + 09-UI-SPEC.md + axes.rs + score.rs + recommend.rs + html.rs + index.html.tmpl."},
-    {"id": 6, "name": "Phase 9 execute-phase (build polar.rs + chart wiring + Pareto column)", "status": "not_started"},
-    {"id": 7, "name": "Phase 9 code-review + fix chain", "status": "not_started"},
-    {"id": 8, "name": "Phase 9 verify-phase (gsd-verifier, goal-backward analysis)", "status": "not_started"},
-    {"id": 9, "name": "Phase 10 (Direction Markers DIR-01..05): full discuss → plan → execute → review → verify cycle", "status": "not_started"},
-    {"id": 10, "name": "Phase 11 (Golden-fixture Regen TEST-01..02): release gate, standalone PR with no production code", "status": "not_started"},
-    {"id": 11, "name": "Milestone v1.1 lifecycle: audit → complete → cleanup", "status": "not_started"}
+    {"id": "commit-plans", "name": "Commit Phase 9 plans + PATTERNS.md + ROADMAP.md annotations + STATE.md", "status": "not_started"},
+    {"id": "execute-phase-09", "name": "Execute Phase 9 (Wave 1: 09-01 || 09-02; Wave 2: 09-03)", "status": "not_started"},
+    {"id": "code-review-09", "name": "Phase 9 code review + fix chain", "status": "not_started"},
+    {"id": "verify-09", "name": "Phase 9 verifier (goal-backward analysis)", "status": "not_started"},
+    {"id": "ui-review-09", "name": "Phase 9 UI review audit (UI-SPEC exists)", "status": "not_started"},
+    {"id": "phase-10", "name": "Phase 10 Direction Markers — full discuss → plan → execute cycle", "status": "not_started"},
+    {"id": "phase-11", "name": "Phase 11 Golden-fixture Regen — release gate, standalone PR no production code", "status": "not_started"},
+    {"id": "lifecycle", "name": "Milestone v1.1 lifecycle: audit → complete → cleanup", "status": "not_started"}
   ],
-  "blockers": [],
+  "blockers": [
+    {"description": "gsd-phase-researcher hit 3 consecutive Internal server error failures (8m, 7m, 6m duration each) before a 4th budget-capped attempt succeeded. May recur on Phase 10's research pass.", "type": "external", "workaround": "Use a tightly tool-budgeted prompt (<=8 calls), prioritise grep over full Read, restrict web search to single hash lookups."}
+  ],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "Spider chart layout: 1×3 horizontal grid, 340×340 square per chart, autosize+responsive", "rationale": "Visual parity with Phase 8 top-N table (3 columns); square preserves polar geometry; autosize handles narrow viewports.", "phase": "09"},
-    {"decision": "Heuristic axes distinguished by (heuristic) suffix + #666 tickfont (vs #222 for measured)", "rationale": "Plotly scatterpolar lacks per-tick gridcolor — dual-signal (label suffix + muted tickfont) communicates uncertainty without breaking polar geometry. WCAG AA: #666 at 11px+ passes.", "phase": "09"},
-    {"decision": "Pareto-front overlay IN SCOPE this phase (POLAR-05)", "rationale": "Pareto-optimal cells over (composite_score↑, image_size_mb↓) get a ★ U+2605 glyph in the table. macOS host excluded (no Docker image). Includes unit tests for Pareto-frontier calculation.", "phase": "09"},
-    {"decision": "polar.rs returns serde_json::Value (not typed struct)", "rationale": "tinytemplate doesn't render serde_json::Value directly; pre-serialize to String for template context. Avoids designing a typed Plotly trace API.", "phase": "09"},
-    {"decision": "No JS dependencies beyond pinned Plotly v2.35.3 CDN with SHA-384 SRI", "rationale": "Honors D-02 static file:// discipline. Safety gate via html::tests::plotly_sri_hash_unchanged sentinel test.", "phase": "09"}
+    {"decision": "Plan 09-02 acceptance criterion reworded — drop the self-contradicting `cargo build succeeds … will fail to compile` phrasing; replace with explicit `cargo test --lib recommend::tests::` succeeds + `cargo build` is expected to FAIL until Plan 09-03 closes the loop", "rationale": "Plan-checker warning #2 — original phrasing confused the executor by asserting both success and failure simultaneously", "phase": "09"},
+    {"decision": "Plan 09-03 layout angularaxis.tickfont.color flipped from #222 to #666", "rationale": "Plan-checker warning #4 — RESEARCH §2 locks #666 as the uniform muted tickfont colour for heuristic-axis visual distinction; original #222 would silently disable the locked compromise", "phase": "09"},
+    {"decision": "Pareto-front routing applies to `## Top 10 cells` summary table + per-cell card templates (NOT the class-keyed `## Recommendations by workload`)", "rationale": "PATTERNS.md disambiguation: existing `Recommendation` struct lacks `(alloc, env)` fields, making Pareto annotation structurally impossible there; routing through `CellRecommendation::is_pareto` mirrors the suspect_flag pattern", "phase": "09"},
+    {"decision": "Wave 1 plans (09-01 || 09-02) intentionally leave the workspace in a transitive build-broken state until Wave 2 (09-03) closes the loop", "rationale": "File-level parallelism trade-off — `top_n_cells` signature widens in 09-02 but call-sites are not yet rewired until 09-03; documented as Wave-1→Wave-2 handoff contract in 09-02 objective", "phase": "09"},
+    {"decision": "Plan-checker Dimension 8 / VALIDATION.md blocker is a false positive — Nyquist is globally disabled via workflow.nyquist_validation: false (no VALIDATION.md exists in any prior phase dir)", "rationale": "The checker's gate logic fired despite the global opt-out; treat as advisory and rely on the checker's own `Effective Verdict: VERIFICATION PASSED with 4 warnings`", "phase": "09"}
   ],
   "uncommitted_files": [
-    ".planning/STATE.md (pre-existing modification — last touched at Phase 8 close)",
-    ".planning/phases/08-per-cell-artifacts/VERIFICATION.md (untracked, pre-existing — Phase 8 verifier output)"
+    ".planning/STATE.md",
+    ".planning/phases/08-per-cell-artifacts/VERIFICATION.md",
+    ".planning/phases/09-spider-chart/09-01-PLAN.md",
+    ".planning/phases/09-spider-chart/09-02-PLAN.md",
+    ".planning/phases/09-spider-chart/09-03-PLAN.md",
+    ".planning/phases/09-spider-chart/09-PATTERNS.md"
   ],
-  "next_action": {
-    "command": "/gsd:autonomous --from 9 (in a fresh session). The autonomous skill detects existing 09-CONTEXT.md and 09-UI-SPEC.md and skips directly to plan-phase.",
-    "why": "Phase 9 discuss + UI-spec are durable on disk and committed. Plan-phase is the natural next step but is the heaviest agent chain (researcher → planner → plan-checker → potential revisions) and would have exhausted the remaining 21% context budget.",
-    "expected_outputs": [
-      ".planning/phases/09-spider-chart/09-RESEARCH.md (NEW)",
-      ".planning/phases/09-spider-chart/09-PATTERNS.md (NEW)",
-      ".planning/phases/09-spider-chart/09-NN-PLAN.md (1+ plans)",
-      ".planning/phases/09-spider-chart/09-PLAN-CHECK.md",
-      "crates/alloc-bench-aggregator/src/polar.rs (NEW post-execute)",
-      "Pareto-front column in the top-N table (post-execute)"
-    ]
-  },
-  "phase_init_state": {
-    "has_context": true,
-    "has_ui_spec": true,
-    "has_research": false,
-    "has_plans": false,
-    "plan_count": 0,
-    "phase_status": "discuss + ui-spec done; ready for plan-phase",
-    "phase_req_ids": "POLAR-01..05, PARETO-01..03 (per CONTEXT)"
-  },
-  "phase_locked_decisions": {
-    "chart_layout": "1×3 grid, 340×340 px square, autosize+responsive",
-    "heuristic_distinction": "(heuristic) label suffix + #666 tickfont (vs #222 measured); WCAG AA at 11px+",
-    "pareto_in_scope": "POLAR-05 IN SCOPE; ★ U+2605 glyph in table; macOS host excluded (no Docker image); includes unit tests",
-    "module_shape": "polar.rs returns serde_json::Value; pre-serialized to String for tinytemplate context",
-    "plotly_version": "v2.35.3 pinned with SHA-384 SRI; sentinel test html::tests::plotly_sri_hash_unchanged",
-    "axes_source": "MEASUREMENT_AXES const ([AxisSpec; 8], frozen, alphabetical) in axes.rs",
-    "top_n_constants": "TOP_N_SPIDER=3 from Phase 7 (recommend.rs)"
-  },
-  "verification_state": {
-    "workspace_tests": "Phase 8 baseline passing (verifier PASS); no Phase 9 code yet written",
-    "output_rs_locked": true,
-    "frozen_schema_sha256": "1bcfb91252eddc2710222abd46b031b85d91267d97a0874fa78d042c15f99a84",
-    "uncommitted_files": [
-      ".planning/STATE.md",
-      ".planning/phases/08-per-cell-artifacts/VERIFICATION.md"
-    ],
-    "outstanding_worktrees": []
-  },
-  "context_notes": "Phase 9 discuss-phase ran via smart-discuss with grey-area batch tables; user accepted all recommended answers. UI-spec produced cleanly with one non-blocking FLAG (Plotly internal margins justified by library defaults). Pause triggered by context-budget warning at 79% — plan-phase research + planner + checker chain is heaviest remaining work and would have exceeded the safe budget. Resume should be in a fresh session via /gsd:autonomous --from 9.",
-  "resume_protocol": {
-    "step_1": "Read .planning/HANDOFF.json + .planning/phases/09-spider-chart/.continue-here.md + 09-CONTEXT.md + 09-UI-SPEC.md to refresh context",
-    "step_2": "/gsd:autonomous --from 9 (autonomous detects existing CONTEXT + UI-SPEC and skips to plan-phase)",
-    "step_3": "Apply any plan-checker revisions until PASS, then execute Phase 9 (polar.rs + chart wiring + Pareto column)",
-    "step_4": "Continue autonomous through Phase 10 (Direction Markers) and Phase 11 (Golden-fixture Regen — standalone PR)",
-    "step_5": "Milestone v1.1 audit → complete → cleanup"
-  }
+  "next_action": "Run /gsd:autonomous --from 9 in a fresh session. The workflow will detect the 3 PLAN.md files on disk, skip plan-phase, and proceed directly to commit + execute-phase. Wave 1 runs 09-01 (polar.rs) and 09-02 (pareto+CellRecommendation) in parallel; Wave 2 runs 09-03 (HTML wiring). Then code-review -> verify -> Phase 10 -> Phase 11 -> lifecycle.",
+  "context_notes": "Phase 9 plan-phase is essentially complete. Hit 75% context budget mid checker-fix application — paused at a clean boundary (between plan-phase and commit/execute). The two surgical fixes (Plan 09-02 wording, Plan 09-03 #666 colour) are the only revisions; the other 2 plan-checker warnings (heavy Plan 09-03 task count, build_trace+build_reference_trace API split vs RESEARCH §1 combined fn) were explicitly acknowledged-acceptable by the checker. Researcher reliability is the one outstanding session-level concern — three consecutive Internal server errors before a budget-capped retry succeeded, worth flagging if it recurs on Phase 10."
 }
