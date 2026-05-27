@@ -1031,6 +1031,11 @@ mod tests {
             recommended_for: vec!["cpu-bound"],
             avoid_for: vec!["memory-bound"],
             suspect_flag: false,
+            // Phase 9 / POLAR-05: render-rendering tests don't exercise the
+            // Pareto column yet — the markdown emitter row-formatter gains
+            // its `★` glyph in Plan 09-03. Default `false` is byte-identical
+            // with the v1.0 baseline.
+            is_pareto: false,
         }
     }
 

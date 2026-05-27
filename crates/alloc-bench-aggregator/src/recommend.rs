@@ -135,6 +135,11 @@ const ALL_CLASSES: [WorkloadClass; 6] = [
 ///     the bottom 2 of the per-class ranking.
 ///   - `suspect_flag`: OR aggregation of `html::is_suspect` over every
 ///     run contributing to this cell.
+///   - `is_pareto` (Phase 9 / POLAR-05): `true` iff this cell is on the
+///     Pareto front of `(composite ↑, image_size_mb ↓)` within the
+///     truncated top-N set. Populated by `top_n_cells` via
+///     `score::pareto_front`. Cells whose env has no `image_sizes`
+///     entry (macOS host) are always `false`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CellRecommendation {
     pub rank: usize,
@@ -148,6 +153,7 @@ pub struct CellRecommendation {
     pub recommended_for: Vec<&'static str>,
     pub avoid_for: Vec<&'static str>,
     pub suspect_flag: bool,
+    pub is_pareto: bool,
 }
 
 /// Build per-class recommendations from the loaded Run set. Always
@@ -608,16 +614,28 @@ fn losers_by_class(runs: &[Run]) -> BTreeMap<&'static str, BTreeSet<(String, Str
 /// `losers_by_class` ranks across the FULL run set, not just the top-N
 /// cells).
 ///
-/// Algorithm (locked per Plan 07-02 <interfaces>):
+/// Algorithm (locked per Plan 07-02 <interfaces> + Plan 09-02 §3):
 ///   1. Truncate to the global top-N via `score::top_n(scores, TOP_N_TOTAL)`.
-///   2. Pre-compute the per-class winner / loser maps in a single pass
+///   2. Compute the Pareto front WITHIN the truncated top-N via
+///      `score::pareto_front(&top_scores, image_sizes)`. The "Pareto
+///      column on the top-N table" is the front of the *displayed*
+///      cells (CONTEXT.md §"Pareto-front data flow").
+///   3. Pre-compute the per-class winner / loser maps in a single pass
 ///      over `runs` (no quadratic re-traversal per cell).
-///   3. For each top-N cell, derive strengths/weaknesses, format the
+///   4. For each top-N cell, derive strengths/weaknesses, format the
 ///      tldr, intersect the winner / loser maps to produce
-///      recommended_for / avoid_for, and OR-aggregate is_suspect over
-///      the cell's runs.
-pub fn top_n_cells(scores: Vec<CellScore>, runs: &[Run]) -> Vec<CellRecommendation> {
+///      recommended_for / avoid_for, OR-aggregate is_suspect over the
+///      cell's runs, and set `is_pareto` from the Pareto set.
+pub fn top_n_cells(
+    scores: Vec<CellScore>,
+    runs: &[Run],
+    image_sizes: &BTreeMap<String, f64>,
+) -> Vec<CellRecommendation> {
     let top_scores = crate::score::top_n(scores, TOP_N_TOTAL);
+    // Phase 9 / POLAR-05: front computed on the TRUNCATED top-N — the
+    // column reports membership among the displayed cells, not against
+    // the full 18-cell sweep. Per CONTEXT.md §"Pareto-front data flow".
+    let pareto_set = crate::score::pareto_front(&top_scores, image_sizes);
     let winners = winners_by_class(runs);
     let losers = losers_by_class(runs);
 
@@ -665,6 +683,7 @@ pub fn top_n_cells(scores: Vec<CellScore>, runs: &[Run]) -> Vec<CellRecommendati
                 recommended_for,
                 avoid_for,
                 suspect_flag,
+                is_pareto: pareto_set.contains(&(cell.alloc.clone(), cell.env.clone())),
             }
         })
         .collect()
@@ -1191,10 +1210,11 @@ mod tests {
         }
     }
 
-    /// REC-01 integration: `top_n_cells(scores, runs)[0]` populates all 11
-    /// fields. We exercise the full surface — composite copy, axes copy,
-    /// non-empty prose strings, strengths/weaknesses length 2, and a
-    /// well-typed `suspect_flag`.
+    /// REC-01 integration: `top_n_cells(scores, runs, image_sizes)[0]`
+    /// populates all 12 fields. We exercise the full surface — composite
+    /// copy, axes copy, non-empty prose strings, strengths/weaknesses
+    /// length 2, a well-typed `suspect_flag`, and the Phase-9
+    /// `is_pareto` decoration.
     #[test]
     fn cell_recommendation_populates_all_fields_from_axes() {
         // Single 1-cell fixture is sufficient to verify field plumbing.
@@ -1226,7 +1246,7 @@ mod tests {
             5.0,
         )];
 
-        let recs = top_n_cells(scores, &runs);
+        let recs = top_n_cells(scores, &runs, &BTreeMap::new());
         assert_eq!(recs.len(), 1);
         let r = &recs[0];
 
@@ -1274,7 +1294,7 @@ mod tests {
             synth_cell_score_uniform("ptmalloc", "debian-slim", 40.0, 40.0),
         ];
 
-        let recs = top_n_cells(scores, &runs);
+        let recs = top_n_cells(scores, &runs, &BTreeMap::new());
         let winner = recs
             .iter()
             .find(|r| r.alloc == "jemalloc" && r.env == "alpine")
@@ -1312,7 +1332,7 @@ mod tests {
             synth_cell_score_uniform("ptmalloc", "debian-slim", 20.0, 20.0),
         ];
 
-        let recs = top_n_cells(scores, &runs);
+        let recs = top_n_cells(scores, &runs, &BTreeMap::new());
         let loser = recs
             .iter()
             .find(|r| r.alloc == "ptmalloc" && r.env == "debian-slim")
@@ -1353,7 +1373,7 @@ mod tests {
         // suspect_flag will all be empty/false. We test the truncation
         // boundary, not class detection.
         let runs: Vec<Run> = Vec::new();
-        let recs = top_n_cells(scores, &runs);
+        let recs = top_n_cells(scores, &runs, &BTreeMap::new());
         assert_eq!(recs.len(), TOP_N_TOTAL);
         assert_eq!(recs.len(), 10);
     }
@@ -1370,7 +1390,126 @@ mod tests {
             })
             .collect();
         let runs: Vec<Run> = Vec::new();
-        let recs = top_n_cells(scores, &runs);
+        let recs = top_n_cells(scores, &runs, &BTreeMap::new());
         assert_eq!(recs.len(), 3);
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 9 / Plan 09-02 / Task 2 tests — POLAR-05 is_pareto field +
+    // widened top_n_cells signature.
+    // ------------------------------------------------------------------
+
+    /// POLAR-05: `CellRecommendation` carries an `is_pareto: bool` field
+    /// (last field, after `suspect_flag`). Compile-time test — the
+    /// struct-literal construction below only compiles iff the field
+    /// exists. Runtime body asserts `cell.is_pareto == true`.
+    #[test]
+    fn cell_recommendation_carries_is_pareto_field() {
+        let mut axes: BTreeMap<&'static str, f64> = BTreeMap::new();
+        for spec in MEASUREMENT_AXES.iter() {
+            axes.insert(spec.key, 0.0);
+        }
+        let cell = CellRecommendation {
+            rank: 1,
+            alloc: "jemalloc".into(),
+            env: "alpine".into(),
+            composite_score: 50.0,
+            axes,
+            tldr: "test".into(),
+            strengths: vec!["a", "b"],
+            weaknesses: vec!["c", "d"],
+            recommended_for: vec![],
+            avoid_for: vec![],
+            suspect_flag: false,
+            is_pareto: true,
+        };
+        assert!(cell.is_pareto);
+    }
+
+    /// POLAR-05: `top_n_cells` populates `is_pareto` for cells on the
+    /// Pareto front of `(composite ↑, image_size_mb ↓)`. Three cells:
+    ///   A (mimalloc, alpine, composite=0.9, image=50.0)  — on front
+    ///   B (jemalloc, debian-slim, composite=0.5, image=200.0) — dominated
+    ///   C (ptmalloc, scratch, composite=0.3, image=10.0) — on front (lowest image)
+    /// Front: {(mimalloc, alpine), (ptmalloc, scratch)}.
+    #[test]
+    fn top_n_cells_populates_is_pareto_for_pareto_front_cells() {
+        // composite gradient: A > B > C; image gradient: C < A < B.
+        // C dominates B on image (smaller); A dominates B on both axes.
+        // → A and C on front; B not.
+        let scores = vec![
+            // Composite values match the truncated top-N's intra-set
+            // Pareto computation (CONTEXT.md §"Pareto-front data flow").
+            synth_cell_score_uniform("mimalloc", "alpine", 90.0, 50.0),
+            synth_cell_score_uniform("jemalloc", "debian-slim", 50.0, 50.0),
+            synth_cell_score_uniform("ptmalloc", "scratch", 30.0, 50.0),
+        ];
+        // Empty runs is fine — recommended_for / avoid_for / suspect_flag
+        // will all be empty/false; this test only exercises is_pareto.
+        let runs: Vec<Run> = Vec::new();
+        let mut image_sizes: BTreeMap<String, f64> = BTreeMap::new();
+        image_sizes.insert("alpine".into(), 50.0);
+        image_sizes.insert("debian-slim".into(), 200.0);
+        image_sizes.insert("scratch".into(), 10.0);
+
+        let recs = top_n_cells(scores, &runs, &image_sizes);
+        assert_eq!(recs.len(), 3);
+
+        let alpine = recs
+            .iter()
+            .find(|r| r.alloc == "mimalloc" && r.env == "alpine")
+            .expect("mimalloc/alpine present");
+        let debian = recs
+            .iter()
+            .find(|r| r.alloc == "jemalloc" && r.env == "debian-slim")
+            .expect("jemalloc/debian-slim present");
+        let scratch = recs
+            .iter()
+            .find(|r| r.alloc == "ptmalloc" && r.env == "scratch")
+            .expect("ptmalloc/scratch present");
+
+        assert!(alpine.is_pareto, "mimalloc/alpine should be on the front");
+        assert!(!debian.is_pareto, "jemalloc/debian-slim should be dominated");
+        assert!(scratch.is_pareto, "ptmalloc/scratch should be on the front");
+    }
+
+    /// POLAR-05: when `image_sizes` is empty (no cell has an image
+    /// entry), no cell is on the front — every returned cell has
+    /// `is_pareto == false`. Mirrors the `pareto_front_excludes_cells_without_image_size`
+    /// score-level invariant at the recommendation-decoration layer.
+    #[test]
+    fn top_n_cells_with_empty_image_sizes_marks_all_cells_not_pareto() {
+        let scores = vec![
+            synth_cell_score_uniform("mimalloc", "alpine", 90.0, 50.0),
+            synth_cell_score_uniform("jemalloc", "debian-slim", 50.0, 50.0),
+            synth_cell_score_uniform("ptmalloc", "scratch", 30.0, 50.0),
+        ];
+        let runs: Vec<Run> = Vec::new();
+        let image_sizes: BTreeMap<String, f64> = BTreeMap::new();
+
+        let recs = top_n_cells(scores, &runs, &image_sizes);
+        assert_eq!(recs.len(), 3);
+        for r in &recs {
+            assert!(
+                !r.is_pareto,
+                "cell {}/{} should NOT be on the front (no image_sizes)",
+                r.alloc, r.env
+            );
+        }
+    }
+
+    /// POLAR-05: `top_n_cells` signature accepts `image_sizes:
+    /// &BTreeMap<String, f64>`. Compile-time + runtime check — the call
+    /// itself is the assertion (would not compile if the type changed).
+    #[test]
+    fn top_n_cells_signature_accepts_image_sizes_btreemap() {
+        let scores: Vec<TestCellScore> = vec![synth_cell_score_uniform(
+            "jemalloc", "alpine", 50.0, 50.0,
+        )];
+        let runs: Vec<Run> = Vec::new();
+        let image_sizes: BTreeMap<String, f64> = BTreeMap::new();
+        // The call below compiles iff the signature is exactly
+        // `top_n_cells(Vec<CellScore>, &[Run], &BTreeMap<String, f64>)`.
+        let _recs: Vec<CellRecommendation> = top_n_cells(scores, &runs, &image_sizes);
     }
 }

@@ -11,7 +11,7 @@
 //! min/max; p10/p90 (`floor(0.10 * 18) = 1`, `floor(0.90 * 18) = 16`) clips
 //! one cell per tail at N=18.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use alloc_bench_core::output::Run;
 
@@ -373,6 +373,68 @@ pub fn top_n(scores: Vec<CellScore>, n: usize) -> Vec<CellScore> {
     });
     scores.truncate(n);
     scores
+}
+
+/// Phase 9 / POLAR-05 — Pareto front of `(composite_score ↑,
+/// image_size_mb ↓)`. Returns the set of `(alloc, env)` keys for the
+/// non-dominated cells.
+///
+/// Algorithm: O(n²) sweep per `09-RESEARCH.md §4`. A cell A is on the
+/// front iff no other cell B (with `image_size_mb` defined) strictly
+/// dominates it — i.e.
+///   `B.composite >= A.composite AND B.image_size <= A.image_size`
+///   AND at least one inequality is strict.
+///
+/// macOS host (cells whose env is absent from `image_sizes`) is
+/// EXCLUDED from the front per `09-CONTEXT.md §"Pareto-front
+/// computation location"`: such cells never enter the result set, and
+/// they cannot dominate any other cell either (the j loop skips them).
+///
+/// Return type is `BTreeSet<(String, String)>` so iteration is
+/// alphabetical — preserves the byte-identical-output discipline
+/// (CLAUDE.md Conventions §"Byte-identical-output discipline").
+pub fn pareto_front(
+    cells: &[CellScore],
+    image_sizes: &BTreeMap<String, f64>,
+) -> BTreeSet<(String, String)> {
+    let mut out: BTreeSet<(String, String)> = BTreeSet::new();
+    for (i, ci) in cells.iter().enumerate() {
+        // macOS host case: cells whose env is absent from `image_sizes`
+        // are EXCLUDED from the front entirely — they have no y-axis
+        // value, so domination is undefined.
+        let yi = match image_sizes.get(&ci.env).copied() {
+            Some(v) => v,
+            None => continue,
+        };
+        let xi = ci.composite;
+
+        // Search for any cj that strictly dominates ci.
+        let mut dominated = false;
+        for (j, cj) in cells.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            // A cell with no image_size cannot dominate another cell —
+            // the y-axis comparison is undefined.
+            let yj = match image_sizes.get(&cj.env).copied() {
+                Some(v) => v,
+                None => continue,
+            };
+            let xj = cj.composite;
+            // Weak: cj is no worse than ci on either axis.
+            let weak = xj >= xi && yj <= yi;
+            // Strict: cj is strictly better on at least one axis.
+            let strict = xj > xi || yj < yi;
+            if weak && strict {
+                dominated = true;
+                break;
+            }
+        }
+        if !dominated {
+            out.insert((ci.alloc.clone(), ci.env.clone()));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -840,6 +902,157 @@ mod tests {
             out[2].alloc,
             out[2].env,
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 9 / POLAR-05 — pareto_front sibling fn tests (added by Plan
+    // 09-02 Task 1).
+    //
+    // Algorithm reference: 09-RESEARCH.md §4 (full O(n²) sweep). macOS
+    // host (cells whose env is absent from `image_sizes`) is excluded
+    // from the front per 09-CONTEXT.md §"Pareto-front computation
+    // location".
+    // ------------------------------------------------------------------
+
+    /// Build a minimal `CellScore` for Pareto-front tests. The algorithm
+    /// only consults `composite` and `image_sizes` — so `axes` is left
+    /// empty and `alloc`/`env` are kept short and lex-stable.
+    fn synth_cell(alloc: &str, env: &str, composite: f64) -> CellScore {
+        CellScore {
+            alloc: alloc.into(),
+            env: env.into(),
+            composite,
+            axes: BTreeMap::new(),
+        }
+    }
+
+    /// POLAR-05: A cell strictly dominated on BOTH axes (lower composite
+    /// AND larger image) must NOT be on the front. Cell A
+    /// (composite=0.9, env="alpine", image=50.0) dominates cell B
+    /// (composite=0.5, env="debian-slim", image=200.0) on both axes →
+    /// only A is on the front.
+    #[test]
+    fn pareto_front_strictly_dominated_cell_excluded() {
+        let cells = vec![
+            synth_cell("alloc", "alpine", 0.9),
+            synth_cell("alloc", "debian-slim", 0.5),
+        ];
+        let mut image_sizes: BTreeMap<String, f64> = BTreeMap::new();
+        image_sizes.insert("alpine".into(), 50.0);
+        image_sizes.insert("debian-slim".into(), 200.0);
+
+        let front = pareto_front(&cells, &image_sizes);
+        assert_eq!(front.len(), 1);
+        assert!(front.contains(&("alloc".to_string(), "alpine".to_string())));
+        assert!(!front.contains(&("alloc".to_string(), "debian-slim".to_string())));
+    }
+
+    /// POLAR-05: Two non-dominated cells (one wins on composite, the
+    /// other wins on image size) must BOTH be on the front. A
+    /// (composite=0.9, image=200.0) and B (composite=0.5, image=10.0):
+    /// neither dominates the other.
+    #[test]
+    fn pareto_front_non_dominated_pair_both_on_front() {
+        let cells = vec![
+            synth_cell("alloc", "alpine", 0.9),
+            synth_cell("alloc", "scratch", 0.5),
+        ];
+        let mut image_sizes: BTreeMap<String, f64> = BTreeMap::new();
+        image_sizes.insert("alpine".into(), 200.0);
+        image_sizes.insert("scratch".into(), 10.0);
+
+        let front = pareto_front(&cells, &image_sizes);
+        assert_eq!(front.len(), 2);
+        assert!(front.contains(&("alloc".to_string(), "alpine".to_string())));
+        assert!(front.contains(&("alloc".to_string(), "scratch".to_string())));
+    }
+
+    /// POLAR-05: Cells whose env is absent from `image_sizes` (macOS
+    /// host case) must be excluded from the front. With three cells —
+    /// A (alpine, 0.9), B (host, 0.95, no image), C (debian-slim, 0.5)
+    /// — and `image_sizes = { alpine: 50.0, debian-slim: 200.0 }`:
+    /// B is excluded because no image entry exists; C is strictly
+    /// dominated by A (higher composite + smaller image). Only A
+    /// remains on the front.
+    #[test]
+    fn pareto_front_excludes_cells_without_image_size() {
+        let cells = vec![
+            synth_cell("alloc", "alpine", 0.9),
+            synth_cell("alloc", "host", 0.95),
+            synth_cell("alloc", "debian-slim", 0.5),
+        ];
+        let mut image_sizes: BTreeMap<String, f64> = BTreeMap::new();
+        image_sizes.insert("alpine".into(), 50.0);
+        image_sizes.insert("debian-slim".into(), 200.0);
+        // No entry for "host" — macOS host case.
+
+        let front = pareto_front(&cells, &image_sizes);
+        assert_eq!(front.len(), 1);
+        assert!(front.contains(&("alloc".to_string(), "alpine".to_string())));
+        assert!(!front.contains(&("alloc".to_string(), "host".to_string())));
+        assert!(!front.contains(&("alloc".to_string(), "debian-slim".to_string())));
+    }
+
+    /// POLAR-05 (RESEARCH §4): Pareto domination requires STRICT
+    /// inequality on at least one axis. Two cells with EQUAL composite
+    /// AND EQUAL image_size do NOT dominate each other — both stay on
+    /// the front.
+    #[test]
+    fn pareto_front_dominates_only_when_strictly_better() {
+        let cells = vec![
+            synth_cell("jemalloc", "alpine", 0.7),
+            synth_cell("mimalloc", "wolfi", 0.7),
+        ];
+        let mut image_sizes: BTreeMap<String, f64> = BTreeMap::new();
+        image_sizes.insert("alpine".into(), 100.0);
+        image_sizes.insert("wolfi".into(), 100.0);
+
+        let front = pareto_front(&cells, &image_sizes);
+        assert_eq!(front.len(), 2);
+        assert!(front.contains(&("jemalloc".to_string(), "alpine".to_string())));
+        assert!(front.contains(&("mimalloc".to_string(), "wolfi".to_string())));
+    }
+
+    /// POLAR-05 edge case: empty input returns an empty `BTreeSet` —
+    /// no panic, no allocation churn.
+    #[test]
+    fn pareto_front_empty_input_returns_empty_set() {
+        let front = pareto_front(&[], &BTreeMap::new());
+        assert!(front.is_empty(), "expected empty set, got {front:?}");
+    }
+
+    /// POLAR-05: the return type is `BTreeSet<(String, String)>` so
+    /// iteration is alphabetical — preserves byte-identical-output
+    /// discipline (CLAUDE.md Conventions). Three on-front cells in
+    /// unsorted insertion order; the iter().collect() result must be
+    /// sorted ascending by (alloc, env).
+    #[test]
+    fn pareto_front_returns_btreeset_for_byte_identical_iteration() {
+        // Insertion order is (z, m, a) — but BTreeSet iter must yield
+        // (a, m, z). All cells have the SAME image_size → strict
+        // domination never triggers, so all 3 stay on the front.
+        let cells = vec![
+            synth_cell("z-alloc", "z-env", 0.5),
+            synth_cell("m-alloc", "m-env", 0.5),
+            synth_cell("a-alloc", "a-env", 0.5),
+        ];
+        let mut image_sizes: BTreeMap<String, f64> = BTreeMap::new();
+        image_sizes.insert("z-env".into(), 100.0);
+        image_sizes.insert("m-env".into(), 100.0);
+        image_sizes.insert("a-env".into(), 100.0);
+
+        let front = pareto_front(&cells, &image_sizes);
+        assert_eq!(front.len(), 3);
+        let collected: Vec<(String, String)> = front.iter().cloned().collect();
+        let mut expected = collected.clone();
+        expected.sort();
+        assert_eq!(
+            collected, expected,
+            "BTreeSet iteration must be alphabetically sorted"
+        );
+        // Spot-check the first element.
+        assert_eq!(collected[0], ("a-alloc".to_string(), "a-env".to_string()));
+        assert_eq!(collected[2], ("z-alloc".to_string(), "z-env".to_string()));
     }
 
     /// `compute_axes` smoke test: 6 synthetic Runs across 2 cells →

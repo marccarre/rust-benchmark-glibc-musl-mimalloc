@@ -573,6 +573,10 @@ mod tests {
             recommended_for: vec!["_SENTINEL_RECCLASS_"],
             avoid_for: vec!["_SENTINEL_AVOIDCLASS_"],
             suspect_flag: true,
+            // Phase 9 / POLAR-05: sentinel-template field-parity test does
+            // not yet check the Pareto column (Plan 09-03 lands the row
+            // emitter); explicit `false` keeps the literal byte-identical.
+            is_pareto: false,
         };
         let ctx = build_cell_template_context(&cell);
 
@@ -642,6 +646,10 @@ mod tests {
             recommended_for: vec![],
             avoid_for: vec![],
             suspect_flag: false,
+            // Phase 9 / POLAR-05: this test asserts CellTemplateContext
+            // EXCLUDES composite_score and axes — `is_pareto` likewise
+            // is not yet template-bound (Plan 09-03 wires the column).
+            is_pareto: false,
         };
         let ctx = build_cell_template_context(&cell);
         let value = serde_json::to_value(&ctx).expect("serialize CellTemplateContext");
@@ -829,6 +837,9 @@ mod tests {
             recommended_for: vec!["cpu-bound"],
             avoid_for: vec!["memory-bound"],
             suspect_flag: false,
+            // Phase 9 / POLAR-05: HTML render-tests don't yet cover the
+            // Pareto column — Plan 09-03 lands the row emitter glyph.
+            is_pareto: false,
         }
     }
 
