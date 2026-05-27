@@ -107,6 +107,104 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::loader::CellMeta;
+    use std::collections::HashMap;
+
+    /// Test helper — build a `CellMeta` with only `image_size_mb` populated.
+    /// All other fields carry zero/empty sentinels because `build_image_sizes`
+    /// projects only `image_size_mb`.
+    fn meta(alloc: &str, env: &str, image_size_mb: f64) -> CellMeta {
+        CellMeta {
+            alloc: alloc.into(),
+            env: env.into(),
+            image_size_bytes: 0,
+            image_size_mb,
+            build_time_s: None,
+            captured_at: None,
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 9 / Plan 09-03 / Task 1 — POLAR-05 build_image_sizes helper.
+    //
+    // Three tests gate the helper:
+    //   - image_sizes_built_from_metas_keyed_by_env: max-across-allocators
+    //     projection per env; output is BTreeMap<env, f64>.
+    //   - image_sizes_excludes_envs_with_no_metas: no implicit zero entries
+    //     for envs missing from input metas (macOS host has no meta entry
+    //     → no map entry → cell excluded by score::pareto_front per
+    //     09-CONTEXT.md "Pareto-front data flow").
+    //   - image_sizes_empty_metas_returns_empty_map: degenerate empty-input.
+    // ------------------------------------------------------------------
+
+    /// POLAR-05: `build_image_sizes` projects metas keyed by `(alloc, env)`
+    /// to a per-env BTreeMap with the maximum `image_size_mb` across
+    /// allocators (envs with multiple cells share the same Docker image;
+    /// taking the max is robust to repeated meta loads).
+    #[test]
+    fn image_sizes_built_from_metas_keyed_by_env() {
+        let mut metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        metas.insert(
+            ("ptmalloc".into(), "alpine".into()),
+            meta("ptmalloc", "alpine", 50.0),
+        );
+        metas.insert(
+            ("jemalloc".into(), "alpine".into()),
+            meta("jemalloc", "alpine", 52.0),
+        );
+        metas.insert(
+            ("mimalloc".into(), "debian-slim".into()),
+            meta("mimalloc", "debian-slim", 200.0),
+        );
+
+        let image_sizes = build_image_sizes(&metas);
+        assert_eq!(image_sizes.len(), 2, "two envs collapse from three metas");
+        let alpine = image_sizes.get("alpine").expect("alpine present");
+        let debian = image_sizes.get("debian-slim").expect("debian-slim present");
+        assert!(
+            (alpine - 52.0).abs() < 1e-9,
+            "alpine should be max=52.0 across two allocators, got {alpine}"
+        );
+        assert!(
+            (debian - 200.0).abs() < 1e-9,
+            "debian-slim should be 200.0, got {debian}"
+        );
+    }
+
+    /// POLAR-05: envs missing from `metas` do NOT receive implicit zero
+    /// entries — they are simply absent from the output map. macOS host
+    /// (no Docker image, no meta entry) is the production case this
+    /// guards.
+    #[test]
+    fn image_sizes_excludes_envs_with_no_metas() {
+        let mut metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        metas.insert(
+            ("ptmalloc".into(), "alpine".into()),
+            meta("ptmalloc", "alpine", 50.0),
+        );
+
+        let image_sizes = build_image_sizes(&metas);
+        assert_eq!(image_sizes.len(), 1, "only one env present");
+        assert!(image_sizes.contains_key("alpine"));
+        assert!(
+            !image_sizes.contains_key("debian-slim"),
+            "no implicit zero entries for unmentioned envs"
+        );
+        assert!(
+            !image_sizes.contains_key("host"),
+            "macOS host (no meta) must NOT appear in image_sizes"
+        );
+    }
+
+    /// POLAR-05: degenerate empty-metas input returns an empty BTreeMap
+    /// (no panics, no implicit entries). Mirrors the score::pareto_front
+    /// empty-input degenerate handling at the upstream call site.
+    #[test]
+    fn image_sizes_empty_metas_returns_empty_map() {
+        let metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        let image_sizes = build_image_sizes(&metas);
+        assert!(image_sizes.is_empty(), "empty metas → empty BTreeMap");
+    }
 
     /// D-13: the `--meta` flag defaults to an empty string so existing
     /// local `just aggregate` invocations keep producing the byte-identical
