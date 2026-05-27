@@ -1,0 +1,20 @@
+### {rank}. {alloc}/{env}{{ if suspect_flag }} *(suspect)*{{ endif }}
+
+{tldr}
+
+**Strengths**
+
+{{ for s in strengths }}- {s}
+{{ endfor }}
+**Weaknesses**
+
+{{ for w in weaknesses }}- {w}
+{{ endfor }}
+**Recommended for**
+
+{{ for c in recommended_for }}- {c}
+{{ endfor }}
+**Avoid for**
+
+{{ for c in avoid_for }}- {c}
+{{ endfor }}

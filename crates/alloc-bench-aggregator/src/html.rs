@@ -30,8 +30,29 @@ use tinytemplate::TinyTemplate;
 use crate::loader::{CellMeta, LoadOutcome};
 use crate::markdown::env_label;
 use crate::multi_run::{aggregate as mr_aggregate, MultiRunStats};
+use crate::recommend::CellRecommendation;
 
 const TEMPLATE: &str = include_str!("../templates/index.html.tmpl");
+
+/// Phase 8 / Plan 01 — per-cell Markdown card body template.
+///
+/// Lives here (not in `markdown.rs`) so the WR-01 sentinel test
+/// (`cell_templates_both_reference_all_fields`) can register both
+/// templates against a single `TinyTemplate` instance and assert
+/// cross-surface field-presence parity. Plan 02's `markdown.rs`
+/// imports this constant via `use crate::html::RECOMMEND_CELL_MD`.
+///
+/// Acknowledged trade-off: cross-module template-string visibility,
+/// accepted for test colocation.
+pub(crate) const RECOMMEND_CELL_MD: &str = include_str!("../templates/recommend-cell.md.tmpl");
+
+/// Phase 8 / Plan 01 — per-cell HTML card body template.
+///
+/// Renders a single `<article class="recommend-card">` body driven by
+/// `CellTemplateContext`. Field-by-field identical to
+/// `RECOMMEND_CELL_MD`; the WR-01 sentinel test enforces this at
+/// `cargo test` time.
+pub(crate) const RECOMMEND_CELL_HTML: &str = include_str!("../templates/recommend-cell.html.tmpl");
 
 /// Pinned Plotly CDN URL (D-02 / RESEARCH §Pitfall 4 — never `latest`).
 pub(crate) const PLOTLY_CDN_URL: &str = "https://cdn.plot.ly/plotly-2.35.3.min.js";
@@ -93,6 +114,60 @@ struct HtmlContext<'a> {
     timestamp_iso8601: &'a str,
     plotly_cdn_url: &'a str,
     plotly_sri_hash: &'a str,
+}
+
+/// Phase 8 / Plan 01 — render context for the per-cell Markdown card
+/// (`RECOMMEND_CELL_MD`) and HTML panel (`RECOMMEND_CELL_HTML`).
+///
+/// Mirrors the renderable subset of `CellRecommendation` (Phase 7) and
+/// adds `rank_padded` so `<article id="recommend-{rank_padded}-...">`
+/// renders `01..10` with leading zero (tinytemplate's default `Display`
+/// formatter on `usize` outputs `1`, not `01`).
+///
+/// Intentionally OMITS `composite_score` and `axes` — per CONTEXT.md
+/// decision, the cards do NOT render score numbers or per-axis values.
+/// The leading `| Rank | Cell | Score |` summary table (Plan 02) handles
+/// `composite_score`; per-axis values are the Phase 9 spider chart's
+/// job. The CELL-02 sentinel test
+/// (`cell_template_context_excludes_score_and_axes`) gates this
+/// decision.
+#[derive(serde::Serialize)]
+pub(crate) struct CellTemplateContext {
+    pub rank: usize,
+    /// `format!("{:02}", cell.rank)` — pre-formatted because tinytemplate's
+    /// default `Display` formatter on `usize` cannot pad-zero.
+    pub rank_padded: String,
+    pub alloc: String,
+    /// Already short-form (e.g. "alpine", "debian-slim", "host") via
+    /// Phase 7 plumbing: `score::env_short_name → CellScore.env →
+    /// CellRecommendation.env` (verified at `recommend.rs:659`).
+    pub env: String,
+    pub tldr: String,
+    pub strengths: Vec<&'static str>,
+    pub weaknesses: Vec<&'static str>,
+    pub recommended_for: Vec<&'static str>,
+    pub avoid_for: Vec<&'static str>,
+    pub suspect_flag: bool,
+}
+
+/// Phase 8 / Plan 01 — convert a `CellRecommendation` (Phase 7
+/// deliverable) into the template-render context. Pure data transform:
+/// clones owned fields, pre-formats `rank_padded`, copies primitives by
+/// value. Plan 02's `markdown.rs` and `html.rs` render paths invoke this
+/// once per top-N cell.
+pub(crate) fn build_cell_template_context(cell: &CellRecommendation) -> CellTemplateContext {
+    CellTemplateContext {
+        rank: cell.rank,
+        rank_padded: format!("{:02}", cell.rank),
+        alloc: cell.alloc.clone(),
+        env: cell.env.clone(),
+        tldr: cell.tldr.clone(),
+        strengths: cell.strengths.clone(),
+        weaknesses: cell.weaknesses.clone(),
+        recommended_for: cell.recommended_for.clone(),
+        avoid_for: cell.avoid_for.clone(),
+        suspect_flag: cell.suspect_flag,
+    }
 }
 
 /// Emit `index.html` from the loaded runs.

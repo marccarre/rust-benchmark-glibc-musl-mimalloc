@@ -1,0 +1,12 @@
+<article class="recommend-card" id="recommend-{rank_padded}-{alloc}-{env}">
+  <h3>{rank}. {alloc}/{env}{{ if suspect_flag }} *(suspect)*{{ endif }}</h3>
+  <p>{tldr}</p>
+  <p><strong>Strengths</strong></p>
+  <ul>{{ for s in strengths }}<li>{s}</li>{{ endfor }}</ul>
+  <p><strong>Weaknesses</strong></p>
+  <ul>{{ for w in weaknesses }}<li>{w}</li>{{ endfor }}</ul>
+  <p><strong>Recommended for</strong></p>
+  <ul>{{ for c in recommended_for }}<li>{c}</li>{{ endfor }}</ul>
+  <p><strong>Avoid for</strong></p>
+  <ul>{{ for c in avoid_for }}<li>{c}</li>{{ endfor }}</ul>
+</article>
