@@ -122,10 +122,17 @@ fn main() -> Result<()> {
     // synthetic-no-scores fixtures.
     let cell_axes = score::compute_axes(&outcome.runs, &metas, &security_metas);
     let cell_scores = score::score_cells(cell_axes);
+    // Phase 9 / POLAR-01..04 — clone cell_scores for the spider chart before
+    // `recommend::top_n_cells` consumes it by value. The cloned slice is
+    // passed to `html::write` so `polar::build_trace` / `build_reference_trace`
+    // can build the scatterpolar JSON. `top_n_cells` truncates internally
+    // (TOP_N_TOTAL = 10) so passing the full vec is correct; the spider
+    // builder takes the first TOP_N_SPIDER (=3) cells in rank order.
+    let scores_for_spider: Vec<score::CellScore> = cell_scores.clone();
     let top_n = recommend::top_n_cells(cell_scores, &outcome.runs, &image_sizes);
 
     markdown::write(&outcome, &metas, &top_n, out_dir)?;
-    html::write(&outcome, &metas, &top_n, out_dir)?;
+    html::write(&outcome, &metas, &top_n, &scores_for_spider, out_dir)?;
     eprintln!(
         "aggregated {} runs, skipped {}",
         outcome.runs.len(),
