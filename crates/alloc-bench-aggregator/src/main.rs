@@ -28,8 +28,12 @@ mod polar;
 mod recommend;
 mod score;
 
+use std::collections::{BTreeMap, HashMap};
+
 use anyhow::{Context, Result};
 use clap::Parser;
+
+use loader::CellMeta;
 
 #[derive(Parser)]
 #[command(
@@ -54,6 +58,36 @@ struct Cli {
     output: String,
 }
 
+/// Phase 9 / POLAR-05 — project per-cell `metas` to a per-env `BTreeMap`
+/// keyed on env name with the maximum `image_size_mb` across allocators.
+///
+/// Per `09-CONTEXT.md §"Pareto-front data flow"`:
+///   - `score::pareto_front` consumes `&BTreeMap<String, f64>` keyed by env.
+///   - macOS host has no Docker image and therefore no `metas` entry — its
+///     env is absent from the output map and `score::pareto_front` excludes
+///     such cells from BOTH the front membership and the dominator pool.
+///   - When multiple allocators map to the same env (typical case: one Docker
+///     image per env shared across 3 allocators), the per-cell metas all
+///     report the same image size; taking the max collapses any rounding
+///     differences in repeated meta loads to a single deterministic value.
+///
+/// Output is `BTreeMap` (not `HashMap`) per the byte-identical-output
+/// discipline (CLAUDE.md Conventions): downstream `score::pareto_front`
+/// iterates the env keys alphabetically.
+fn build_image_sizes(metas: &HashMap<(String, String), CellMeta>) -> BTreeMap<String, f64> {
+    let mut out: BTreeMap<String, f64> = BTreeMap::new();
+    for ((_alloc, env), meta) in metas.iter() {
+        out.entry(env.clone())
+            .and_modify(|existing| {
+                if meta.image_size_mb > *existing {
+                    *existing = meta.image_size_mb;
+                }
+            })
+            .or_insert(meta.image_size_mb);
+    }
+    out
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let outcome = loader::discover(&cli.input)?;
@@ -63,6 +97,9 @@ fn main() -> Result<()> {
     // produces an empty BTreeMap which `compute_axes` handles via the
     // `score=0 + em-dash tooltip` fallback (SEC-03 / Plan 07).
     let security_metas = loader::load_security_metas(&cli.security)?;
+    // Phase 9 / POLAR-05 — derive per-env image sizes for the Pareto-front
+    // computation. Collapses 18-cell `metas` to ≤6-env `image_sizes`.
+    let image_sizes = build_image_sizes(&metas);
     let out_dir = std::path::Path::new(&cli.output);
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("creating output dir {}", cli.output))?;
@@ -85,14 +122,7 @@ fn main() -> Result<()> {
     // synthetic-no-scores fixtures.
     let cell_axes = score::compute_axes(&outcome.runs, &metas, &security_metas);
     let cell_scores = score::score_cells(cell_axes);
-    // Phase 9 / POLAR-05 stub: empty image_sizes here; Plan 09-03 wires
-    // the real `BTreeMap<String, f64>` derived from `metas` so the
-    // Pareto column populates. Empty BTreeMap → no cell on the front
-    // (matches `top_n_cells_with_empty_image_sizes_marks_all_cells_not_pareto`
-    // semantics) — preserves v1.0 byte-identical output until 09-03.
-    let image_sizes_stub: std::collections::BTreeMap<String, f64> =
-        std::collections::BTreeMap::new();
-    let top_n = recommend::top_n_cells(cell_scores, &outcome.runs, &image_sizes_stub);
+    let top_n = recommend::top_n_cells(cell_scores, &outcome.runs, &image_sizes);
 
     markdown::write(&outcome, &metas, &top_n, out_dir)?;
     html::write(&outcome, &metas, &top_n, out_dir)?;
