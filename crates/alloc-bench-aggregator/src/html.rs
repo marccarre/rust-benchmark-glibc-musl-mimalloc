@@ -573,10 +573,11 @@ mod tests {
             recommended_for: vec!["_SENTINEL_RECCLASS_"],
             avoid_for: vec!["_SENTINEL_AVOIDCLASS_"],
             suspect_flag: true,
-            // Phase 9 / POLAR-05: sentinel-template field-parity test does
-            // not yet check the Pareto column (Plan 09-03 lands the row
-            // emitter); explicit `false` keeps the literal byte-identical.
-            is_pareto: false,
+            // Phase 9 / POLAR-05 / Plan 09-03: WR-01 sentinel now also
+            // checks the per-cell `★` annotation. Setting is_pareto: true
+            // forces both per-cell templates to emit U+2605; the
+            // `expected_in_both` assertion below catches drift.
+            is_pareto: true,
         };
         let ctx = build_cell_template_context(&cell);
 
@@ -591,6 +592,9 @@ mod tests {
         // Cross-surface field-presence parity: every sentinel renders in
         // BOTH outputs. The literal `(suspect)` parenthesized form is the
         // suspect byte-identity gate (no `<em>`, no badge, no glyph).
+        // Phase 9 / POLAR-05 / Plan 09-03: `\u{2605}` (★) is the per-cell
+        // Pareto-front annotation; both templates append
+        // `{{ if is_pareto }} ★{{ endif }}` to the heading.
         let expected_in_both = [
             "_SENTINEL_ALLOC_",
             "_SENTINEL_ENV_",
@@ -602,6 +606,7 @@ mod tests {
             "_SENTINEL_RECCLASS_",
             "_SENTINEL_AVOIDCLASS_",
             "(suspect)",
+            "\u{2605}",
         ];
         for s in expected_in_both {
             assert!(md.contains(s), "MD missing {s}: {md}");
@@ -666,6 +671,7 @@ mod tests {
                 "alloc",
                 "avoid_for",
                 "env",
+                "is_pareto",
                 "rank",
                 "rank_padded",
                 "recommended_for",

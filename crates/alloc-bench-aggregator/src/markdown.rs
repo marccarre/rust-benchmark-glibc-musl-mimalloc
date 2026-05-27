@@ -1265,6 +1265,79 @@ mod tests {
         );
     }
 
+    // ---------------------------------------------------------------------
+    // Phase 9 / Plan 09-03 / Task 2 — POLAR-05 Pareto column.
+    //
+    // Three tests gate the 4-column summary table extension:
+    //   - top_n_cells_summary_table_includes_pareto_column_header
+    //   - top_n_cells_summary_table_renders_star_for_pareto_cells
+    //   - top_n_cells_summary_table_separator_includes_pareto_column
+    // Star glyph U+2605 (3 bytes UTF-8: `0xE2 0x98 0x85`).
+    // ---------------------------------------------------------------------
+
+    /// POLAR-05: the leading `## Top 10 cells` summary table header is
+    /// widened to 4 columns: `| Rank | Cell | Score | Pareto |`. Exact
+    /// literal substring match — no whitespace drift permitted.
+    #[test]
+    fn top_n_cells_summary_table_includes_pareto_column_header() {
+        let mut top_n = make_top_n(3);
+        // Spike one cell on the front so the table renders both the
+        // glyph and an empty cell.
+        top_n[0].is_pareto = true;
+        let mut buf = String::new();
+        emit_top_n_cells(&mut buf, &top_n).expect("emit");
+
+        assert!(
+            buf.contains("| Rank | Cell | Score | Pareto |"),
+            "expected literal `| Rank | Cell | Score | Pareto |` 4-column header in:\n{buf}"
+        );
+    }
+
+    /// POLAR-05: rows render `\u{2605}` (★) for Pareto-front cells and
+    /// empty (single space) for non-Pareto cells. The 4-column shape
+    /// `| 01 | mimalloc on alpine | 0.789 | ★ |` for is_pareto=true;
+    /// `| 02 | jemalloc on debian-slim | 0.756 |  |` for is_pareto=false
+    /// (note the empty cell — single space between the third `|` and
+    /// fourth `|`).
+    #[test]
+    fn top_n_cells_summary_table_renders_star_for_pareto_cells() {
+        let mut top_n = make_top_n(3);
+        top_n[0].is_pareto = true; // rank 1 — should render ★
+        // top_n[1] / top_n[2] keep is_pareto=false from make_cell default
+
+        let mut buf = String::new();
+        emit_top_n_cells(&mut buf, &top_n).expect("emit");
+
+        // make_top_n cycles through allocs[0..4]=[mimalloc,jemalloc,mallocng,ptmalloc]
+        // and envs[0..3]=[alpine,debian-slim,wolfi]; rank 1 → mimalloc/alpine,
+        // rank 2 → jemalloc/debian-slim. Score values from make_cell:
+        //   rank 1: 0.789 - 0.033*0 = 0.789 → "0.789"
+        //   rank 2: 0.789 - 0.033*1 = 0.756 → "0.756"
+        assert!(
+            buf.contains("| 01 | mimalloc on alpine | 0.789 | \u{2605} |"),
+            "expected Pareto row literal `| 01 | mimalloc on alpine | 0.789 | \u{2605} |` in:\n{buf}"
+        );
+        assert!(
+            buf.contains("| 02 | jemalloc on debian-slim | 0.756 |  |"),
+            "expected non-Pareto row with empty cell `|  |` in:\n{buf}"
+        );
+    }
+
+    /// POLAR-05: the 4-column separator row matches the 4-column header.
+    /// `|------|------|-------|--------|` — the new `--------` segment
+    /// (8 dashes) widens the line by exactly one column.
+    #[test]
+    fn top_n_cells_summary_table_separator_includes_pareto_column() {
+        let top_n = make_top_n(3);
+        let mut buf = String::new();
+        emit_top_n_cells(&mut buf, &top_n).expect("emit");
+
+        assert!(
+            buf.contains("|------|------|-------|--------|"),
+            "expected literal 4-column separator `|------|------|-------|--------|` in:\n{buf}"
+        );
+    }
+
     /// Test 5: leading `| Rank | Cell | Score |` summary table sits between
     /// the section caption and the first card body. Exactly 10 data rows
     /// for top_n.len()=10, matching `\| 0X | <alloc> on <env> | 0.YYY |`
