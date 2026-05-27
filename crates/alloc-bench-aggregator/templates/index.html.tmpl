@@ -254,7 +254,16 @@ section.diff-picker label \{
     <h2>Per-scenario allocator comparison</h2>
     <div id="report-mirror-tables"></div>
   </section>
-</div>
+{{ if has_top_n }}  <section class="top-n-recommendations">
+    <h2>Top 10 cells</h2>
+    <p>Ranked 1-10 by composite score (equal-weighted across 8 axes). Cards 6-10 collapsed by default.</p>
+    {{ for cell in top_n_visible }}{{ call recommend-cell-html with cell }}{{ endfor }}
+    <details>
+      <summary>Show ranks 6–10</summary>
+      {{ for cell in top_n_collapsed }}{{ call recommend-cell-html with cell }}{{ endfor }}
+    </details>
+  </section>
+{{ endif }}</div>
 <script>
 // Inlined results — `unescaped` formatter prevents tinytemplate from
 // HTML-escaping `<`/`>`/`&`/`"` inside the JSON.
