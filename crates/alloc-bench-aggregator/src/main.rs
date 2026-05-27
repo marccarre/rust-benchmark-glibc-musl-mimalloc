@@ -24,6 +24,7 @@ mod html;
 mod loader;
 mod markdown;
 mod multi_run;
+mod polar;
 mod recommend;
 mod score;
 
