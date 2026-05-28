@@ -42,6 +42,30 @@ impl Direction {
     }
 }
 
+/// Phase 10 / DIR-01 / Plan 10-01 Task 1 — single-source-of-truth helper
+/// that threads `Direction::arrow()` onto a measurement-column label.
+/// Lives next to `Direction` and `MEASUREMENT_AXES` so both the Markdown
+/// emitter (`markdown.rs::emit_per_scenario_tables` — Plan 10-01 Task 2)
+/// and the HTML emitter (`html.rs` — Plan 10-02) consume the same
+/// function. Cross-surface drift is defended by `T-10-01` /
+/// `T-10-04` mitigations: this is the ONLY place where the format
+/// pattern lives.
+///
+/// Returns `String` (not `Cow<'static, str>`) per CONTEXT D-claude-discretion-2:
+/// call sites are sparse (6 markdown columns + 4 HTML axis labels) and
+/// `Cow<'static, str>` would add lifetime-tracking discipline cost without
+/// a profiler signal. The `polar.rs::axis_label_for_chart` `Cow` precedent
+/// (POLAR-03 / WR-04) is reserved for axis-label helpers under borrow
+/// pressure; this helper has no such pressure.
+///
+/// Format contract (pinned by `column_header_with_arrow_threads_glyph_after_label`):
+///   `format!("{label} {arrow}", arrow = dir.arrow())`
+/// — single ASCII space (U+0020) between label and glyph; glyph is the
+/// last character; no leading/trailing whitespace.
+pub fn column_header_with_arrow(label: &str, dir: Direction) -> String {
+    format!("{label} {arrow}", arrow = dir.arrow())
+}
+
 /// One axis of the 8-axis measurement registry. All four fields are
 /// `Copy`-friendly so the whole struct is `Copy + Clone + Debug` — this
 /// lets downstream consumers iterate `MEASUREMENT_AXES` by value without
