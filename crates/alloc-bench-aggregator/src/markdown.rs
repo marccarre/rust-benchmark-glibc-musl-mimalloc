@@ -31,6 +31,7 @@ use alloc_bench_core::output::{Env, HarnessInfo, Run};
 use anyhow::{Context, Result};
 use tinytemplate::TinyTemplate;
 
+use crate::axes::{column_header_with_arrow, Direction};
 use crate::diagrams::ALL_DIAGRAMS;
 use crate::html::{build_cell_template_context, is_suspect, RECOMMEND_CELL_MD};
 use crate::loader::{CellMeta, LoadOutcome};
@@ -159,9 +160,29 @@ fn emit_per_scenario_tables(buf: &mut String, runs: &[Run]) {
 
         let _ = writeln!(buf, "## {scenario_name}");
         let _ = writeln!(buf);
+        // Phase 10 / DIR-02: one-line legend above every per-scenario table,
+        // between the `## {scenario}` heading and the table header. Layout
+        // is `heading\n\n{legend}\n\nheader\n` — gives one blank line
+        // above the legend and one blank line below. Interpunct is U+00B7
+        // (NOT U+2022 BULLET, NOT U+002E FULL STOP); pinned by
+        // `legend_row_above_each_scenario_table` test.
         let _ = writeln!(
             buf,
-            "| allocator | throughput | p50 | p95 | p99 | p999 | peak RSS |"
+            "\u{2191} higher is better \u{00b7} \u{2193} lower is better \u{00b7} \u{26a0} suspect run"
+        );
+        let _ = writeln!(buf);
+        // Phase 10 / DIR-01: arrow-decorated header line built via
+        // `column_header_with_arrow` (axes.rs SSoT helper). The
+        // `allocator` column stays plain — it's a label, not a measurement.
+        let _ = writeln!(
+            buf,
+            "| allocator | {} | {} | {} | {} | {} | {} |",
+            column_header_with_arrow("throughput", Direction::Higher),
+            column_header_with_arrow("p50", Direction::Lower),
+            column_header_with_arrow("p95", Direction::Lower),
+            column_header_with_arrow("p99", Direction::Lower),
+            column_header_with_arrow("p999", Direction::Lower),
+            column_header_with_arrow("peak RSS", Direction::Lower),
         );
         let _ = writeln!(buf, "|---|---|---|---|---|---|---|");
 
