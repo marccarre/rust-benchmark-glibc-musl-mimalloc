@@ -18,11 +18,16 @@
 //!     CLAUDE.md cross-libc rejection, so the rendered string is
 //!     `"Matrix mean (n=18)"` — but that is an emergent property of the
 //!     production input length, not a hard-coded literal (WR-01).
-//!   - `pub fn axis_label_for_chart(spec: &AxisSpec) -> String`
+//!   - `pub fn axis_label_for_chart(spec: &AxisSpec) -> Cow<'static, str>`
 //!     POLAR-03: appends the exact 11-byte ` (heuristic)` suffix (single
 //!     leading U+0020 space) for `image_size_efficiency` and
-//!     `security_posture`; returns the plain `spec.label` for the other
-//!     six measured axes.
+//!     `security_posture` (returned as `Cow::Owned`); returns the plain
+//!     `spec.label` (returned as `Cow::Borrowed` of the static string)
+//!     for the other six measured axes. WR-04 (Phase-09 review): the
+//!     non-heuristic branch previously allocated via
+//!     `spec.label.to_string()`, producing a heap-allocated `String` for
+//!     a `&'static str`; `Cow` lets callers pay only for the suffix
+//!     materialization on the two heuristic axes.
 //!
 //! Locked invariants:
 //!   - `MEASUREMENT_AXES` iteration is `.iter()` on the const array (NOT a
@@ -35,6 +40,8 @@
 //!     `PolarTrace` struct) per CONTEXT.md — tinytemplate consumes the
 //!     pre-serialized JSON string, not a typed value.
 
+use std::borrow::Cow;
+
 use serde_json::{json, Value};
 
 use crate::axes::{AxisSpec, MEASUREMENT_AXES};
@@ -44,11 +51,20 @@ use crate::score::CellScore;
 /// with a single leading U+0020 space) to the labels of the two heuristic
 /// axes — `image_size_efficiency` and `security_posture` — and returns the
 /// plain registry label for the other six measured axes. POLAR-03.
-pub fn axis_label_for_chart(spec: &AxisSpec) -> String {
+///
+/// WR-04 (Phase-09 review): returns `Cow<'static, str>` so the
+/// non-heuristic branch borrows the static `spec.label` instead of
+/// allocating a fresh `String` on every call. Six of the eight axes
+/// hit the borrowed branch on every render. Callers that need owned
+/// `String`s collect via `.into_owned()` (the two trace builders below
+/// already materialize owned `String`s for serde_json's `Vec<String>`
+/// boundary, so the heuristic-branch allocation still happens but only
+/// for two axes per trace, not all eight).
+pub fn axis_label_for_chart(spec: &AxisSpec) -> Cow<'static, str> {
     if spec.is_heuristic {
-        format!("{} (heuristic)", spec.label)
+        Cow::Owned(format!("{} (heuristic)", spec.label))
     } else {
-        spec.label.to_string()
+        Cow::Borrowed(spec.label)
     }
 }
 
@@ -67,9 +83,14 @@ pub fn build_trace(score: &CellScore) -> Value {
         .iter()
         .map(|spec| score.axes.get(spec.key).copied().unwrap_or(0.0))
         .collect();
+    // WR-04 (Phase-09 review): `axis_label_for_chart` returns
+    // `Cow<'static, str>`. The serde_json `theta` array needs owned
+    // `String`s so we materialize each `Cow` via `.into_owned()` here.
+    // Six of the eight axes return `Cow::Borrowed` (zero-cost); only
+    // the two heuristic axes incur the heap allocation.
     let mut theta: Vec<String> = MEASUREMENT_AXES
         .iter()
-        .map(axis_label_for_chart)
+        .map(|spec| axis_label_for_chart(spec).into_owned())
         .collect();
     // POLAR-02 polygon closure: repeat index 0 at index 8.
     r.push(r[0]);
@@ -114,9 +135,12 @@ pub fn build_reference_trace(scores: &[CellScore]) -> Value {
             }
         })
         .collect();
+    // WR-04: see `build_trace` — `axis_label_for_chart` now returns
+    // `Cow<'static, str>`; `.into_owned()` materializes only on the two
+    // heuristic axes.
     let mut theta: Vec<String> = MEASUREMENT_AXES
         .iter()
-        .map(axis_label_for_chart)
+        .map(|spec| axis_label_for_chart(spec).into_owned())
         .collect();
     // POLAR-02 polygon closure (also applies to the reference polygon).
     r.push(r[0]);
@@ -202,12 +226,17 @@ mod tests {
     }
 
     /// POLAR-03 ordering safety net: iterating `MEASUREMENT_AXES.iter()` and
-    /// collecting `axis_label_for_chart(spec)` produces a `Vec<String>` of
-    /// length 8 where indices 2 and 6 carry ` (heuristic)` and the other
-    /// six do not — flips the bool on either side breaks the assertion.
+    /// collecting `axis_label_for_chart(spec)` produces a `Vec<Cow<'static,
+    /// str>>` of length 8 where indices 2 and 6 carry ` (heuristic)` and
+    /// the other six do not — flips the bool on either side breaks the
+    /// assertion.
+    ///
+    /// WR-04 (Phase-09 review): `axis_label_for_chart` returns
+    /// `Cow<'static, str>`; `Cow::contains` (via `Deref<Target = str>`)
+    /// works transparently here.
     #[test]
     fn axis_label_for_chart_handles_all_eight_axes_in_constant_order() {
-        let labels: Vec<String> = MEASUREMENT_AXES
+        let labels: Vec<Cow<'static, str>> = MEASUREMENT_AXES
             .iter()
             .map(axis_label_for_chart)
             .collect();
