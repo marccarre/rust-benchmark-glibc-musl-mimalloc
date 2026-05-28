@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
-status: executing
-stopped_at: Phase 10 complete (10-01 + 10-02); ready for verification then Phase 11
-last_updated: "2026-05-28T21:15:40.380Z"
+status: ready_to_plan
+stopped_at: Phase 10 complete (2/2) — ready to discuss Phase 11
+last_updated: 2026-05-28T22:35:01.412Z
 last_activity: 2026-05-28
 progress:
   total_phases: 7
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-17)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** Phase 10 — Direction Markers
+**Current focus:** Phase 11 — golden fixture regen
 
 ## Current Position
 
-Phase: 10 (Direction Markers) — EXECUTING
-Plan: 2 of 2
+Phase: 11
+Plan: Not started
 Next phase: 10 (continue with `/gsd:plan-phase 10`), then 11 (Golden-fixture Regen)
 Last activity: 2026-05-28
 
@@ -56,7 +56,7 @@ Build-order constraint: Phase 6 blocks 7+9+10; Phase 7 blocks 8+9; Phase 10 bloc
 
 **Velocity:**
 
-- Total plans completed: 12
+- Total plans completed: 14
 - Average duration: -
 - Total execution time: 0.0 hours
 
@@ -68,6 +68,7 @@ Build-order constraint: Phase 6 blocks 7+9+10; Phase 7 blocks 8+9; Phase 10 bloc
 | 02 | 3 | - | - |
 | 4 | 3 | - | - |
 | 5 | 4 | - | - |
+| 10 | 2 | - | - |
 
 **Recent Trend:**
 
