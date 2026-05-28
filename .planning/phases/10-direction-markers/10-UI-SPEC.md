@@ -1,10 +1,11 @@
 ---
 phase: 10
 slug: direction-markers
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-05-29
+reviewed_at: 2026-05-29T00:00:00Z
 ---
 
 # Phase 10 — UI Design Contract
