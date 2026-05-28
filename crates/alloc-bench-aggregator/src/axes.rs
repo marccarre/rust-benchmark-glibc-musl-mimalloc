@@ -145,4 +145,50 @@ mod tests {
             vec!["image_size_efficiency", "security_posture"]
         );
     }
+
+    /// Phase 10 / DIR-01 / Plan 10-01 Task 1: `column_header_with_arrow`
+    /// threads exactly one ASCII space between label and the U+2191 / U+2193
+    /// glyph drawn from `Direction::arrow()`. This test is the cross-surface
+    /// SSoT pin (T-10-01 mitigation): if a future contributor swaps `↑`
+    /// (U+2191) for a look-alike (e.g. `→` U+2192, `⬆` U+2B06), the literal
+    /// `\u{2191}` / `\u{2193}` expected strings catch it at compile-test time.
+    /// The single-ASCII-space delimiter (NOT NBSP, NOT double-space, NOT
+    /// leading whitespace) is also gated — protecting the byte-stable
+    /// header-row format `| throughput ↑ |` from accidental drift.
+    #[test]
+    fn column_header_with_arrow_threads_glyph_after_label() {
+        // Higher-direction case (DIR-01 throughput column).
+        assert_eq!(
+            column_header_with_arrow("throughput", Direction::Higher),
+            "throughput \u{2191}",
+            "Higher direction must render `{{label}} ↑` with U+2191"
+        );
+        // Lower-direction case (DIR-01 latency column).
+        assert_eq!(
+            column_header_with_arrow("p99", Direction::Lower),
+            "p99 \u{2193}",
+            "Lower direction must render `{{label}} ↓` with U+2193"
+        );
+        // Single-ASCII-space delimiter pin: byte-level inspection
+        // forbids NBSP (U+00A0), double-space, or leading/trailing whitespace.
+        let header = column_header_with_arrow("peak RSS", Direction::Lower);
+        let bytes = header.as_bytes();
+        // Expected bytes: "peak RSS " (9 ASCII bytes) + "\u{2193}" (3 UTF-8 bytes).
+        assert_eq!(
+            bytes,
+            b"peak RSS \xe2\x86\x93",
+            "header bytes must be label + single ASCII space (0x20) + U+2193 (0xE2 0x86 0x93); got {bytes:?}"
+        );
+        // No leading whitespace.
+        assert!(
+            !header.starts_with(' '),
+            "no leading whitespace permitted"
+        );
+        // No trailing whitespace AFTER the glyph (glyph itself is the last char).
+        assert_eq!(
+            header.chars().last(),
+            Some('\u{2193}'),
+            "the U+2193 glyph must be the last character"
+        );
+    }
 }
