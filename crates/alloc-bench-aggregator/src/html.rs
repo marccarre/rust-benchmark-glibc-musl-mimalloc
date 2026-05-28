@@ -27,6 +27,7 @@ use alloc_bench_core::output::{HarnessInfo, Run};
 use anyhow::{Context, Result};
 use tinytemplate::TinyTemplate;
 
+use crate::axes::MEASUREMENT_AXES;
 use crate::loader::{CellMeta, LoadOutcome};
 use crate::markdown::env_label;
 use crate::multi_run::{aggregate as mr_aggregate, MultiRunStats};
@@ -135,20 +136,22 @@ struct HtmlContext<'a> {
     /// early-return so v1.0 byte-identity is preserved symmetrically across
     /// both surfaces when `top_n` is empty (no `<section>` bytes emitted).
     has_top_n: bool,
-    /// Phase 9 / POLAR-01..04 — pre-serialized JSON array of Plotly
-    /// scatterpolar traces (top-3 cell traces + matrix-mean reference
-    /// trace built by `polar::build_reference_trace`, FIRST element so
-    /// the reference polygon renders BEHIND the cell polygons per
-    /// CONTEXT.md "Layout & Plotly Configuration"). Inlined into the
-    /// `<script>` block via `{ spider_traces_json | unescaped }` so
-    /// tinytemplate doesn't HTML-escape `<`/`>`/`&`/`"` inside the
-    /// JSON.
-    spider_traces_json: &'a str,
-    /// Phase 9 / POLAR-04 — pre-serialized JSON layout object reused
-    /// for the spider chart. radialaxis range [0,1], angularaxis
-    /// tickfont, etc. per UI-SPEC §"Per-chart Plotly layout". Inlined
-    /// via `{ spider_layout_json | unescaped }`.
-    spider_layout_json: &'a str,
+    /// Phase 9 / Plan 09-04 / UI-REVIEW BLOCKER fix — per-cell spider
+    /// chart contexts. Each element pairs:
+    ///   - `traces_json`: a JSON ARRAY `[reference_trace, cell_trace]`
+    ///     where the matrix-mean reference polygon is FIRST (so it
+    ///     renders BEHIND the cell polygon per CONTEXT.md "Layout &
+    ///     Plotly Configuration").
+    ///   - `layout_json`: a per-cell layout JSON carrying
+    ///     `title.text = "{alloc}/{env}"` (UI-SPEC §"Per-chart Plotly
+    ///     layout") + the per-tick `tickfont.color` array
+    ///     (`#222`/`#666` keyed off `MEASUREMENT_AXES.is_heuristic`).
+    /// Length is `min(TOP_N_SPIDER, top_n.len())`. Empty when
+    /// `top_n.is_empty()` (the `{{ if has_spider }}` gate omits the
+    /// section entirely).
+    /// Inlined into the template via
+    /// `{{ for cell in spider_cells }}...{ cell.traces_json | unescaped }...{ cell.layout_json | unescaped }...{{ endfor }}`.
+    spider_cells: &'a [SpiderCellContext],
     /// Phase 9 / POLAR-02 — gates the entire
     /// `<section class="spider-chart">` block in `index.html.tmpl` via
     /// `{{ if has_spider }}...{{ endif }}` wrapper. Set to
@@ -156,6 +159,30 @@ struct HtmlContext<'a> {
     /// top_n preserves v1.0 byte-identity on synthetic-no-scores
     /// fixtures.
     has_spider: bool,
+}
+
+/// Phase 9 / Plan 09-04 — per-cell spider chart context. One instance
+/// per `.spider-cell` div in the small-multiples grid. Built by
+/// `build_spider_context` and consumed by the `{{ for cell in
+/// spider_cells }}` loop in `index.html.tmpl`.
+#[derive(serde::Serialize)]
+struct SpiderCellContext {
+    /// Pre-serialized JSON array `[reference_trace, cell_trace]`. The
+    /// reference polygon (matrix mean across all input cells) is FIRST
+    /// so it renders BEHIND the cell polygon. Inlined via
+    /// `{ cell.traces_json | unescaped }`.
+    traces_json: String,
+    /// Pre-serialized JSON layout object carrying the per-cell
+    /// `title.text = "{alloc}/{env}"` + the per-tick `tickfont.color`
+    /// array. Inlined via `{ cell.layout_json | unescaped }`.
+    layout_json: String,
+    /// 1-based cell index used as a stable per-cell HTML id suffix
+    /// (`spider-cell-1`, `spider-cell-2`, `spider-cell-3`). Pre-formatted
+    /// because tinytemplate's default `Display` formatter is what we want
+    /// here (no padding needed for 1..=3) — the field exists so the
+    /// template can render `id="spider-cell-{cell.index}"` without
+    /// arithmetic.
+    index: usize,
 }
 
 /// Phase 8 / Plan 01 — render context for the per-cell Markdown card
@@ -282,19 +309,27 @@ struct BuiltContext {
     multi_run_grouped: String,
 }
 
-/// Phase 9 spider chart pre-serialized JSON, owned in render() and
-/// borrowed by `HtmlContext.spider_traces_json` / `spider_layout_json`.
-/// Lives outside `BuiltContext` because it depends on `cell_scores`,
-/// not just `runs` — `build_context` is called early on the runs vec
-/// while the spider context is built later in render() once
-/// `cell_scores` is in scope.
+/// Phase 9 / Plan 09-04 — per-cell spider chart pre-serialized JSON,
+/// owned in render() and borrowed by `HtmlContext.spider_cells`. Lives
+/// outside `BuiltContext` because it depends on `cell_scores`, not just
+/// `runs` — `build_context` is called early on the runs vec while the
+/// spider context is built later in render() once `cell_scores` is in
+/// scope.
+///
+/// Refactored from a single overlay (`traces` + `layout` strings) into
+/// a vector of per-cell contexts: each top-`TOP_N_SPIDER` cell gets its
+/// own (reference + cell) trace pair plus its own layout JSON carrying
+/// `title.text = "{alloc}/{env}"`. This matches the UI-SPEC's
+/// "small-multiples grid" requirement (three side-by-side `<div
+/// class="spider-cell">` containers, each receiving an independent
+/// `Plotly.react` call).
 struct SpiderContext {
-    /// Pre-serialized JSON array `[reference_trace, cell_trace_1, ...]`
-    /// where the reference trace is FIRST per CONTEXT.md "Layout &
-    /// Plotly Configuration" decision (renders BEHIND cell polygons).
-    traces: String,
-    /// Pre-serialized JSON layout object reused across all charts.
-    layout: String,
+    /// One element per `.spider-cell` div. Length is
+    /// `min(TOP_N_SPIDER, cell_scores.len())`. Empty when
+    /// `cell_scores.is_empty()` (the `{{ if has_spider }}` gate omits
+    /// the section entirely; this fn is still called but the vec
+    /// goes unused).
+    cells: Vec<SpiderCellContext>,
 }
 
 /// JSON-encode for safe inlining inside an HTML `<script>` block. Escapes
@@ -390,16 +425,36 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
     })
 }
 
-/// Phase 9 / POLAR-01..04 — build the spider chart trace + layout JSON
-/// strings inlined into `index.html.tmpl`. The reference polygon
-/// (matrix mean across all 18 cells) is the FIRST trace per CONTEXT.md
-/// "Layout & Plotly Configuration" so it renders BEHIND the cell
-/// polygons. Subsequent traces are the top-`TOP_N_SPIDER` cells in
-/// rank order.
+/// Phase 9 / Plan 09-04 (UI-REVIEW BLOCKER fix) — build the per-cell
+/// spider chart trace + layout JSON strings inlined into the
+/// `index.html.tmpl` `{{ for cell in spider_cells }}` loop.
 ///
-/// Empty `cell_scores` returns `"[]"` for traces and the standard
-/// layout JSON (the `{{ if has_spider }}` gate omits the section
-/// entirely; this fn is still called but the strings are unused).
+/// Each top-`TOP_N_SPIDER` cell receives:
+///   - a `traces_json` JSON ARRAY `[reference_trace, cell_trace]` —
+///     the matrix-mean reference polygon FIRST (renders BEHIND the
+///     cell polygon per CONTEXT.md "Layout & Plotly Configuration"),
+///     followed by that single cell's polygon.
+///   - a `layout_json` carrying `title.text = "{alloc}/{env}"` +
+///     `font: { size: 14, color: "#1F2328" }` per UI-SPEC §"Per-chart
+///     Plotly layout".
+///
+/// The `tickfont.color` is a per-tick array computed by iterating
+/// `MEASUREMENT_AXES` and emitting `"#666"` for `is_heuristic == true`,
+/// `"#222"` otherwise. This keeps the array in sync if MEASUREMENT_AXES
+/// changes (vs hard-coding [#222, #222, #666, #222, ...] which would
+/// silently drift if the axes registry is reordered or a new axis is
+/// added).
+///
+/// The reference polygon is computed ONCE against the full `cell_scores`
+/// slice (so the matrix mean reflects the full population, not the
+/// top-3) and re-serialized into each per-cell trace pair. The legend
+/// name `"Matrix mean (n=N)"` interpolates `cell_scores.len()` so it
+/// stays truthful for partial inputs (POLAR-04 / WR-01).
+///
+/// Empty `cell_scores` returns an empty `cells` vec. The
+/// `{{ if has_spider }}` gate in the template omits the section
+/// entirely on that path; this fn is still called but the vec goes
+/// unused.
 fn build_spider_context(cell_scores: &[CellScore]) -> Result<SpiderContext> {
     // Take the first TOP_N_SPIDER (=3) cells. `recommend::top_n_cells`
     // already truncates and sorts cell_scores by composite score, so
@@ -410,44 +465,71 @@ fn build_spider_context(cell_scores: &[CellScore]) -> Result<SpiderContext> {
         &cell_scores[..TOP_N_SPIDER]
     };
 
-    // Reference trace FIRST so it renders behind the cell polygons.
-    let mut traces: Vec<serde_json::Value> = Vec::with_capacity(head.len() + 1);
-    traces.push(polar::build_reference_trace(cell_scores));
-    for score in head {
-        traces.push(polar::build_trace(score));
+    // Per-tick `tickfont.color` array — 8 entries, indexed by
+    // `MEASUREMENT_AXES` iteration order. `#666` for heuristic axes
+    // (image_size_efficiency at index 2, security_posture at index 6),
+    // `#222` for the six real-measurement axes. Computed by iterating
+    // the axes registry so the array stays in sync if a new axis is
+    // added or the alphabetical ordering shifts.
+    let tickfont_color: Vec<&'static str> = MEASUREMENT_AXES
+        .iter()
+        .map(|spec| if spec.is_heuristic { "#666" } else { "#222" })
+        .collect();
+
+    // Reference polygon is computed ONCE against the full cell_scores
+    // slice (not the top-3 head) so the matrix mean reflects the full
+    // population. Per-cell pairs serialize a (reference, cell) tuple.
+    let reference_trace = polar::build_reference_trace(cell_scores);
+
+    let mut cells: Vec<SpiderCellContext> = Vec::with_capacity(head.len());
+    for (idx, score) in head.iter().enumerate() {
+        // Two-trace array: reference FIRST, cell SECOND.
+        let trace_pair = serde_json::Value::Array(vec![
+            reference_trace.clone(),
+            polar::build_trace(score),
+        ]);
+
+        // UI-SPEC §"Per-chart Plotly layout" — per-cell layout with a
+        // chart-level title carrying `{alloc}/{env}`. The
+        // `tickfont.color` is the per-tick array (NOT the scalar `#666`
+        // that shipped pre-09-04).
+        let layout = serde_json::json!({
+            "polar": {
+                "radialaxis": {
+                    "range": [0, 1],
+                    "visible": true,
+                    "showticklabels": false,
+                    "gridcolor": "#E1E4E8",
+                    "linecolor": "#E1E4E8"
+                },
+                "angularaxis": {
+                    "tickfont": { "size": 11, "color": tickfont_color },
+                    "gridcolor": "#E1E4E8",
+                    "linecolor": "#E1E4E8"
+                },
+                "bgcolor": "#ffffff"
+            },
+            "showlegend": false,
+            "margin": { "l": 30, "r": 30, "t": 40, "b": 30 },
+            "autosize": true,
+            "paper_bgcolor": "#ffffff",
+            "plot_bgcolor": "#ffffff",
+            "title": {
+                "text": format!("{}/{}", score.alloc, score.env),
+                "font": { "size": 14, "color": "#1F2328" }
+            }
+        });
+
+        cells.push(SpiderCellContext {
+            traces_json: to_script_safe_json(&trace_pair)
+                .context("serializing spider per-cell trace pair to JSON")?,
+            layout_json: to_script_safe_json(&layout)
+                .context("serializing spider per-cell layout to JSON")?,
+            index: idx + 1,
+        });
     }
 
-    // UI-SPEC §"Per-chart Plotly layout" — single layout reused across
-    // all 3 charts (polar grid). radialaxis range [0,1], angularaxis
-    // tickfont, white background, no legend (cell title doubles as
-    // chart heading), modest margins.
-    let layout = serde_json::json!({
-        "polar": {
-            "radialaxis": {
-                "range": [0, 1],
-                "visible": true,
-                "showticklabels": false,
-                "gridcolor": "#E1E4E8",
-                "linecolor": "#E1E4E8"
-            },
-            "angularaxis": {
-                "tickfont": { "size": 11, "color": "#666" },
-                "gridcolor": "#E1E4E8",
-                "linecolor": "#E1E4E8"
-            },
-            "bgcolor": "#ffffff"
-        },
-        "showlegend": false,
-        "margin": { "l": 30, "r": 30, "t": 40, "b": 30 },
-        "autosize": true,
-        "paper_bgcolor": "#ffffff",
-        "plot_bgcolor": "#ffffff"
-    });
-
-    Ok(SpiderContext {
-        traces: to_script_safe_json(&traces).context("serializing spider traces to JSON")?,
-        layout: to_script_safe_json(&layout).context("serializing spider layout to JSON")?,
-    })
+    Ok(SpiderContext { cells })
 }
 
 fn render(
@@ -505,8 +587,7 @@ fn render(
         top_n_visible: &visible_ctxs,
         top_n_collapsed: &collapsed_ctxs,
         has_top_n: !top_n.is_empty(),
-        spider_traces_json: &spider.traces,
-        spider_layout_json: &spider.layout,
+        spider_cells: &spider.cells,
         // Phase 9 / POLAR-02 — gate the spider section on top_n
         // non-emptiness (mirrors `has_top_n`). `cell_scores.is_empty()`
         // would also work but yields the same answer in practice

@@ -297,18 +297,23 @@ section.diff-picker label \{
 {{ endif }}{{ if has_spider }}  <section class="spider-chart">
     <h2>Top-3 Above the Fold</h2>
     <p>Spider charts of the top-3 cells across 8 normalized axes (0-1). Grey reference polygon = mean across all 18 cells.</p>
-    <div id="chart-spider" class="spider-grid"></div>
+    <div id="chart-spider" class="spider-grid">
+{{ for cell in spider_cells }}      <div class="spider-cell" id="spider-cell-{cell.index}"></div>
+{{ endfor }}    </div>
     <script>
-      // Phase 9 / POLAR-04 — Plotly.react (NOT newPlot) per RESEARCH
-      // §Anti-Patterns: react diffs the DOM in place; newPlot re-mounts
-      // and causes flicker on filter-driven re-renders. The spider chart
-      // is currently render-once but the convention applies project-wide
-      // (gated by `aggregator_html_uses_plotly_react_not_newplot`).
-      Plotly.react('chart-spider',
-        { spider_traces_json | unescaped },
-        { spider_layout_json | unescaped },
+      // Phase 9 / Plan 09-04 (UI-REVIEW BLOCKER fix) — three independent
+      // Plotly.react calls, one per `.spider-cell` div. Each cell receives
+      // a 2-trace array (reference polygon FIRST, cell polygon SECOND)
+      // plus a per-cell layout JSON carrying `title.text = "\{alloc}/\{env}"`
+      // and the per-tick `tickfont.color` array. Plotly.react (NOT
+      // newPlot) per RESEARCH §Anti-Patterns: react diffs the DOM in
+      // place; newPlot re-mounts and causes flicker. Convention is
+      // gated by `aggregator_html_uses_plotly_react_not_newplot`.
+{{ for cell in spider_cells }}      Plotly.react('spider-cell-{cell.index}',
+        { cell.traces_json | unescaped },
+        { cell.layout_json | unescaped },
         \{ responsive: true });
-    </script>
+{{ endfor }}    </script>
   </section>
 {{ endif }}</div>
 <script>
