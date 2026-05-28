@@ -10,10 +10,10 @@
 
 Phase numbering continues from v1.0 (last phase = 5; surgical patch = 5.1) → v1.1 starts at Phase 6. Build order is **strictly serial**: Phase 6 blocks 7+9+10 (axes registry consumed by all three); Phase 7 blocks 8+9 (CellRecommendation + score outputs); Phase 10 blocks 11 (direction-marker arrows change column-header bytes; golden fixture cannot be regenerated until Phase 10 lands).
 
-- [ ] **Phase 6: Foundations** — Axes registry, security sidecars, frozen-schema guard
-- [ ] **Phase 7: Scoring & Top-N** — Direction-aware normalization, composite scoring, recommendation struct
-- [ ] **Phase 8: Per-cell Artifacts** — Markdown + HTML cards via two templates with sync sentinel
-- [ ] **Phase 9: Spider Chart** — `polar.rs` scatterpolar trace builder + chart wiring + Pareto overlay
+- [x] **Phase 6: Foundations** — Axes registry, security sidecars, frozen-schema guard
+- [x] **Phase 7: Scoring & Top-N** — Direction-aware normalization, composite scoring, recommendation struct
+- [x] **Phase 8: Per-cell Artifacts** — Markdown + HTML cards via two templates with sync sentinel
+- [x] **Phase 9: Spider Chart** — `polar.rs` scatterpolar trace builder + chart wiring + Pareto overlay
 - [ ] **Phase 10: Direction Markers** — Column headers + axis labels + legend + a11y
 - [ ] **Phase 11: Golden-fixture Regen** — Standalone PR; byte-identical pinning
 
@@ -47,7 +47,7 @@ Plans:
   - `--security` flag default value: empty string (matches `--meta` ergonomics, preserves byte-identical output when absent) vs. `meta/security/*.json` glob (richer dashboard out of the box). Recommend empty string per Phase-5 D-13 precedent.
   - Empty-pattern fallback for the security axis when `meta/security/*.json` is absent: render `score = 0` with em-dash tooltip vs. drop the axis entirely (8 → 7). Recommend em-dash fallback for byte-identical-output preservation and stable 8-axis spider shape.
 
-### Phase 7: Scoring & Top-N
+### Phase 7: Scoring & Top-N ✅
 
 **Goal:** Build the scoring keystone — `score.rs` (direction-aware normalization, composite scoring with summation-order discipline, alphabetical tiebreak) and the `CellRecommendation` struct + `top_n_cells()` extension to `recommend.rs`. Every visual artifact in Phases 8 and 9 depends on this output. The split between data-only `score.rs` and prose-aware `recommend.rs::top_n_cells` keeps the existing 13 tests in `recommend.rs` untouched.
 **Depends on:** Phase 6 (consumes `MEASUREMENT_AXES` constant order, `Direction` enum, `SecurityMeta` BTreeMap)
@@ -66,7 +66,7 @@ Plans:
   - Dry-run the chosen p10/p90 winsorization on the v1.0 committed fixtures to verify spread is informative (not flat). If p10/p90 still compresses meaningfully, document fixed-clamp fallback as a TODO.
   - Heuristic-axis weight cap: equal weights = 1/8 per axis means the two heuristic axes (image-size, security) contribute 25/100 = 25% of composite. Test `score::tests::heuristic_axes_cannot_promote_worst_measured_cell_to_top_1` is intentionally designed to force this discussion before scoring ships. Decide: keep equal weights (milestone spec, ship as-is) vs. cap aggregate heuristic weight at 12.5% (one axis worth — defers to v1.2).
 
-### Phase 8: Per-cell Artifacts
+### Phase 8: Per-cell Artifacts ✅
 
 **Goal:** Render `CellRecommendation` through two tinytemplate files (`recommend-cell.md.tmpl` for Markdown card, `recommend-cell.html.tmpl` for HTML panel) — single struct → two outputs → drift caught at compile time. Pre-empts WR-01-style drift the v1.0 winner-tiebreak fix already exposed once. Adds a `## Top 10 cells` section to REPORT.md and a `<section class="top-n-recommendations">` to `index.html`.
 **Depends on:** Phase 7 (consumes `CellRecommendation` struct + `TOP_N_*` named constants)
@@ -92,7 +92,7 @@ Plans:
 
 - [x] 08-02-PLAN.md — main.rs wiring + emit_top_n_cells + index.html.tmpl <section> + per-cell .md/.html fragment writes (CELL-03, CELL-04, CELL-05) ✓ 2026-05-27
 
-### Phase 9: Spider Chart
+### Phase 9: Spider Chart ✅
 
 **Goal:** Build `polar.rs` — server-side `scatterpolar` trace JSON builder consumed by `index.html.tmpl`'s new `<div id="chart-spider">`. Top-3 cells render above the fold as a small-multiples grid; matrix-mean reference polygon overlaid at 25% alpha for context; heuristic axes visually distinguished; Plotly SRI hash pinned by test to prevent silent trace-API drift on Plotly upgrade.
 **Depends on:** Phase 6 (consumes `MEASUREMENT_AXES`), Phase 7 (consumes `CellScore` / `CellRecommendation` for top-N selection)
