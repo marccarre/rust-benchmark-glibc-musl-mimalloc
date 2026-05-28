@@ -612,30 +612,47 @@ fn losers_by_class(runs: &[Run]) -> BTreeMap<&'static str, BTreeSet<(String, Str
 /// `Vec<CellScore>` from `score::score_cells` — passing a pre-truncated
 /// top-N would corrupt the avoid_for class-bottom-2 ranking (because
 /// `losers_by_class` ranks across the FULL run set, not just the top-N
-/// cells).
+/// cells) AND the Pareto front (which now operates on the full sweep
+/// per WR-03).
 ///
-/// Algorithm (locked per Plan 07-02 <interfaces> + Plan 09-02 §3):
-///   1. Truncate to the global top-N via `score::top_n(scores, TOP_N_TOTAL)`.
-///   2. Compute the Pareto front WITHIN the truncated top-N via
-///      `score::pareto_front(&top_scores, image_sizes)`. The "Pareto
-///      column on the top-N table" is the front of the *displayed*
-///      cells (CONTEXT.md §"Pareto-front data flow").
+/// Algorithm (locked per Plan 07-02 <interfaces> + Plan 09-02 §3, with
+/// the WR-03 Phase-09 review correction to step 2):
+///   1. Compute the Pareto front on the FULL `scores` slice via
+///      `score::pareto_front(&scores, image_sizes)`. The `is_pareto`
+///      flag on each `CellRecommendation` thus carries "globally on
+///      the front" semantics — the per-cell `★` glyph and the
+///      Markdown column mark cells that are non-dominated across the
+///      entire 18-cell sweep, not merely Pareto-optimal among the
+///      top-10 displayed cells. Cost: one O(n²) sweep on n=18 (324
+///      comparisons), negligible.
+///   2. Truncate to the global top-N via `score::top_n(scores, TOP_N_TOTAL)`.
 ///   3. Pre-compute the per-class winner / loser maps in a single pass
 ///      over `runs` (no quadratic re-traversal per cell).
 ///   4. For each top-N cell, derive strengths/weaknesses, format the
 ///      tldr, intersect the winner / loser maps to produce
 ///      recommended_for / avoid_for, OR-aggregate is_suspect over the
-///      cell's runs, and set `is_pareto` from the Pareto set.
+///      cell's runs, and set `is_pareto` from the (full-sweep) Pareto
+///      set.
+///
+/// WR-03 (Phase-09 review): the original implementation computed the
+/// Pareto front WITHIN the truncated top-N, which produced a
+/// user-facing ambiguity: a cell at rank 8 might appear `★` because
+/// the cell that would have dominated it was truncated away. Switching
+/// to the full-sweep front matches the visual intuition of a
+/// Pareto-optimality marker and aligns the per-cell glyph with the
+/// global non-dominance contract.
 pub fn top_n_cells(
     scores: Vec<CellScore>,
     runs: &[Run],
     image_sizes: &BTreeMap<String, f64>,
 ) -> Vec<CellRecommendation> {
+    // Phase 9 / POLAR-05 + WR-03 (Phase-09 review): front computed on
+    // the FULL `scores` slice BEFORE truncation. The Pareto column /
+    // ★ glyph reports global non-dominance across the full 18-cell
+    // sweep — not merely sub-set optimality among the displayed top-N.
+    // Per CONTEXT.md §"Pareto-front data flow" (revised post-WR-03).
+    let pareto_set = crate::score::pareto_front(&scores, image_sizes);
     let top_scores = crate::score::top_n(scores, TOP_N_TOTAL);
-    // Phase 9 / POLAR-05: front computed on the TRUNCATED top-N — the
-    // column reports membership among the displayed cells, not against
-    // the full 18-cell sweep. Per CONTEXT.md §"Pareto-front data flow".
-    let pareto_set = crate::score::pareto_front(&top_scores, image_sizes);
     let winners = winners_by_class(runs);
     let losers = losers_by_class(runs);
 
@@ -1471,6 +1488,107 @@ mod tests {
         assert!(alpine.is_pareto, "mimalloc/alpine should be on the front");
         assert!(!debian.is_pareto, "jemalloc/debian-slim should be dominated");
         assert!(scratch.is_pareto, "ptmalloc/scratch should be on the front");
+    }
+
+    /// WR-03 (Phase-09 review): the Pareto front is now computed on
+    /// the FULL `scores` slice BEFORE truncation. A cell that is on
+    /// the top-N truncated front but DOMINATED by an out-of-top-N cell
+    /// must NOT receive the `★` (is_pareto: true).
+    ///
+    /// Construction: 12 cells. The top-10 by composite are A1..A10
+    /// (composite 90..81, image=200). Truncation drops A11
+    /// (composite=20, image=200) and A12 (composite=85, image=10) — A12
+    /// has the SMALLEST image and a large composite, so it dominates
+    /// every cell on its env… but more importantly, A12 dominates A10
+    /// on the (composite ↑, image ↓) plane: A12 has composite=85 and
+    /// image=10, vs A10 composite=81 and image=200 — A12 is strictly
+    /// better on BOTH axes. Under the OLD truncated-front semantics
+    /// A10 would be flagged Pareto (because A12 was truncated away);
+    /// under the NEW full-sweep semantics A10 is dominated by A12 and
+    /// MUST be flagged `is_pareto: false`.
+    #[test]
+    fn top_n_cells_pareto_front_uses_full_sweep_not_truncated_top_n() {
+        // 10 high-composite cells on env=`big` (image=200) — these
+        // form the top-10 by composite. Their composites span 90..81.
+        // a10 has the lowest composite among them.
+        let mut scores: Vec<TestCellScore> = (0..10)
+            .map(|i| {
+                let composite = 90.0 - i as f64;
+                synth_cell_score_uniform(
+                    &format!("alloc{i:02}"),
+                    "big",
+                    composite,
+                    50.0,
+                )
+            })
+            .collect();
+        // a11 has very low composite (truncated away — irrelevant to the
+        // test, just pads the input above TOP_N_TOTAL=10).
+        scores.push(synth_cell_score_uniform("alloc11", "big", 20.0, 50.0));
+        // a12 has the SMALLEST image (env=`small`, image=10) AND a
+        // composite (85.0) higher than a10 (81.0). a12 strictly
+        // dominates a10 on BOTH axes — composite 85>81, image 10<200.
+        // a12 itself is truncated out of the top-10 (composite=85
+        // sits at rank 6 by composite — wait, that's actually inside
+        // the top-10. Let me drop a12's composite below the top-10
+        // threshold so it's truncated away.)
+        //
+        // Actually 85.0 > 81.0 = a10's composite, so a12 would land
+        // INSIDE the top-10 (above a10). Adjust: give a12 a composite
+        // of 80.5 — strictly less than a10 (81.0) so a12 is NOT in
+        // the top-10. But then a12 doesn't dominate a10 on composite
+        // anymore (80.5 < 81.0). So we need a12 to dominate a10 on
+        // image_size only, and tie or worse on composite.
+        //
+        // Pareto-front strict-dominance rule: B dominates A iff
+        //   B.composite ≥ A.composite AND B.image ≤ A.image
+        //   AND at least one inequality is strict.
+        // So a12.composite == a10.composite (81.0 — tie) AND
+        //    a12.image    <  a10.image (10 < 200 — strict)
+        // → a12 dominates a10. Tied composite means a12 is OUTSIDE
+        // the top-10 only if `score::top_n` drops one of the tied
+        // cells. The current `top_n` sort is `(composite DESC, alloc
+        // ASC, env ASC)`, and with TOP_N_TOTAL=10 there are exactly
+        // 11 cells with composite ≥ 81.0 (a0..a9 and a12). With alloc
+        // names sorted ASC, "alloc09" < "alloc12" so a12 is dropped
+        // by the truncation.
+        scores.push(synth_cell_score_uniform("alloc12", "small", 81.0, 50.0));
+
+        let runs: Vec<Run> = Vec::new();
+        let mut image_sizes: BTreeMap<String, f64> = BTreeMap::new();
+        image_sizes.insert("big".into(), 200.0);
+        image_sizes.insert("small".into(), 10.0);
+
+        let recs = top_n_cells(scores, &runs, &image_sizes);
+        assert_eq!(recs.len(), 10, "truncated to TOP_N_TOTAL=10");
+
+        // a10 is in the top-10 (composite=81, image=200) but is
+        // strictly dominated by a12 (composite=81 tie, image=10 strict
+        // — outside the top-10). With WR-03's full-sweep semantics,
+        // a10.is_pareto MUST be false.
+        let a09 = recs
+            .iter()
+            .find(|r| r.alloc == "alloc09" && r.env == "big")
+            .expect("alloc09/big should be in top-10");
+        assert!(
+            !a09.is_pareto,
+            "WR-03: alloc09/big is dominated by the truncated alloc12/small \
+             (composite tie, image 10<200) — full-sweep front MUST mark it \
+             is_pareto=false; the OLD truncated-front semantics flagged it true"
+        );
+
+        // a0 (composite=90, image=200) is on the global front because
+        // a12 has composite=81 < 90 → tie-breaking on composite gives
+        // a0 the strict-better composite, so a12 does not dominate.
+        // No other cell beats a0 on composite, so a0 is on the front.
+        let a00 = recs
+            .iter()
+            .find(|r| r.alloc == "alloc00" && r.env == "big")
+            .expect("alloc00/big should be in top-10");
+        assert!(
+            a00.is_pareto,
+            "WR-03: alloc00/big has the highest composite — on the global front"
+        );
     }
 
     /// POLAR-05: when `image_sizes` is empty (no cell has an image
