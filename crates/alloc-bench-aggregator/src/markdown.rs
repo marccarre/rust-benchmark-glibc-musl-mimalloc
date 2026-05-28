@@ -1349,6 +1349,176 @@ mod tests {
         );
     }
 
+    // ---------------------------------------------------------------------
+    // Phase 10 / Plan 10-01 Task 2 — DIR-01 / DIR-02 / DIR-05 tests.
+    //
+    // Three tests gate the per-scenario table arrow decoration + legend:
+    //   - scenario_table_headers_carry_direction_markers   (DIR-01)
+    //   - legend_row_above_each_scenario_table             (DIR-02)
+    //   - data_cells_contain_no_direction_markers          (DIR-05)
+    //
+    // U+2191 / U+2193 / U+00B7 / U+26A0 literals used in expected strings
+    // to guard against look-alike glyph substitution (T-10-01 / T-10-02
+    // mitigations).
+    // ---------------------------------------------------------------------
+
+    /// DIR-01: every per-scenario table header line must equal exactly
+    /// `| allocator | throughput ↑ | p50 ↓ | p95 ↓ | p99 ↓ | p999 ↓ | peak RSS ↓ |`
+    /// — the `allocator` column stays plain, every measurement column
+    /// carries its arrow glyph from `column_header_with_arrow`. Uses
+    /// `\u{2191}` / `\u{2193}` literals to pin the exact U+2191 /
+    /// U+2193 bytes (T-10-01 mitigation).
+    #[test]
+    fn scenario_table_headers_carry_direction_markers() {
+        let runs = vec![
+            make_run("jemalloc", "cpu-bound", 100.0, 50_000, 5.0, None),
+            make_run("mimalloc", "cpu-bound", 110.0, 50_000, 5.0, None),
+        ];
+        let mut buf = String::new();
+        emit_per_scenario_tables(&mut buf, &runs);
+
+        let expected_header = "| allocator | throughput \u{2191} | p50 \u{2193} | p95 \u{2193} | p99 \u{2193} | p999 \u{2193} | peak RSS \u{2193} |";
+        assert!(
+            buf.contains(expected_header),
+            "expected literal arrow-decorated header line in:\n{buf}\n\nexpected:\n{expected_header}"
+        );
+
+        // Sanity: the `allocator` column stays plain (no arrow attached).
+        assert!(
+            !buf.contains("allocator \u{2191}") && !buf.contains("allocator \u{2193}"),
+            "the allocator column must stay plain (no arrow) in:\n{buf}"
+        );
+    }
+
+    /// DIR-02: a one-line legend `↑ higher is better · ↓ lower is better
+    /// · ⚠ suspect run` appears once per scenario, on its own line, with
+    /// one blank line on each side, between the `## {scenario}` heading
+    /// and the table header. Uses interpunct U+00B7 (NOT U+2022 BULLET,
+    /// NOT U+002E FULL STOP) — pinned by literal escape (T-10-02).
+    #[test]
+    fn legend_row_above_each_scenario_table() {
+        // Two distinct scenarios → two legend occurrences.
+        let runs = vec![
+            make_run("jemalloc", "cpu-bound", 100.0, 50_000, 5.0, None),
+            make_run("jemalloc", "multithread", 120.0, 50_000, 5.0, None),
+        ];
+        let mut buf = String::new();
+        emit_per_scenario_tables(&mut buf, &runs);
+
+        // Legend literal — U+2191, U+2193, U+00B7, U+26A0.
+        let legend = "\u{2191} higher is better \u{00b7} \u{2193} lower is better \u{00b7} \u{26a0} suspect run";
+        let occurrences = buf.matches(legend).count();
+        assert_eq!(
+            occurrences, 2,
+            "expected legend to appear once per scenario (2 total) in:\n{buf}"
+        );
+
+        // Interpunct discipline: must contain U+00B7, must NOT contain
+        // U+2022 BULLET in the legend region. Scan all lines.
+        for line in buf.lines() {
+            if line.contains("higher is better") {
+                assert!(
+                    line.contains('\u{00b7}'),
+                    "legend line must contain U+00B7 MIDDLE DOT, got: {line:?}"
+                );
+                assert!(
+                    !line.contains('\u{2022}'),
+                    "legend must NOT contain U+2022 BULLET, got: {line:?}"
+                );
+            }
+        }
+
+        // Layout pin: for each scenario, find `## {name}` then assert
+        // the next non-blank line is the legend, and the line after the
+        // legend (skipping one blank) is the table header.
+        for scenario in &["cpu-bound", "multithread"] {
+            let heading = format!("## {scenario}");
+            let lines: Vec<&str> = buf.lines().collect();
+            let heading_idx = lines
+                .iter()
+                .position(|l| *l == heading)
+                .unwrap_or_else(|| panic!("missing heading `{heading}` in:\n{buf}"));
+            // Expect: heading, blank, legend, blank, header.
+            assert_eq!(
+                lines[heading_idx + 1], "",
+                "expected blank line below `{heading}`, got: {:?}",
+                lines[heading_idx + 1]
+            );
+            assert_eq!(
+                lines[heading_idx + 2], legend,
+                "expected legend on the line after the blank below `{heading}`, got: {:?}",
+                lines[heading_idx + 2]
+            );
+            assert_eq!(
+                lines[heading_idx + 3], "",
+                "expected blank line above the table for `{heading}`, got: {:?}",
+                lines[heading_idx + 3]
+            );
+            assert!(
+                lines[heading_idx + 4].starts_with("| allocator |"),
+                "expected table header on the line after the legend's trailing blank for `{heading}`, got: {:?}",
+                lines[heading_idx + 4]
+            );
+        }
+    }
+
+    /// DIR-05: data cells contain ZERO `↑` / `↓` glyphs across REPORT.md.
+    /// Arrows live in column headers and the legend ONLY; cells stay
+    /// numeric (preserves byte-stable `{:.0}` / `{:.1}` / `{}` formatting).
+    /// Implementation: iterate every line; skip heading lines (`## `),
+    /// the legend, the table-header line (matches `| allocator |`), and
+    /// the separator (`|---`). For the remaining table data rows, count
+    /// `↑` / `↓` occurrences — must be zero.
+    #[test]
+    fn data_cells_contain_no_direction_markers() {
+        // Multi-scenario fixture that exercises winner-marker, suspect
+        // notes, and the multi-run cell shape — none of those decorations
+        // should leak `↑` / `↓` glyphs into data cells.
+        let runs = vec![
+            make_run("jemalloc", "cpu-bound", 100.0, 50_000, 5.0, Some("alpine")),
+            make_run("jemalloc", "cpu-bound", 110.0, 50_000, 5.0, Some("alpine")),
+            make_run("jemalloc", "cpu-bound", 105.0, 50_000, 5.0, Some("alpine")),
+            make_run("mimalloc", "cpu-bound", 95.0, 500, 5.0, Some("alpine")), // suspect
+            make_run(
+                "ptmalloc",
+                "multithread",
+                80.0,
+                50_000,
+                5.0,
+                Some("debian-slim"),
+            ),
+        ];
+        let mut buf = String::new();
+        emit_per_scenario_tables(&mut buf, &runs);
+
+        for line in buf.lines() {
+            // Skip non-data lines:
+            // - section headings (`## scenario`)
+            // - the legend (contains `higher is better`)
+            // - the table-header line (contains `allocator |` and the arrows belong here)
+            // - the separator (`|---`)
+            // - blank lines
+            if line.starts_with("## ")
+                || line.contains("higher is better")
+                || line.starts_with("| allocator |")
+                || line.starts_with("|---")
+                || line.is_empty()
+            {
+                continue;
+            }
+            // Remaining lines are table data rows — must NOT contain
+            // U+2191 or U+2193.
+            assert!(
+                !line.contains('\u{2191}'),
+                "data row contains forbidden U+2191 glyph (DIR-05):\n  {line:?}"
+            );
+            assert!(
+                !line.contains('\u{2193}'),
+                "data row contains forbidden U+2193 glyph (DIR-05):\n  {line:?}"
+            );
+        }
+    }
+
     /// Test 5: leading `| Rank | Cell | Score |` summary table sits between
     /// the section caption and the first card body. Exactly 10 data rows
     /// for top_n.len()=10, matching `\| 0X | <alloc> on <env> | 0.YYY |`
