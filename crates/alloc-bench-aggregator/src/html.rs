@@ -27,7 +27,7 @@ use alloc_bench_core::output::{HarnessInfo, Run};
 use anyhow::{Context, Result};
 use tinytemplate::TinyTemplate;
 
-use crate::axes::MEASUREMENT_AXES;
+use crate::axes::{column_header_with_arrow, Direction, MEASUREMENT_AXES};
 use crate::loader::{CellMeta, LoadOutcome};
 use crate::markdown::env_label;
 use crate::multi_run::{aggregate as mr_aggregate, MultiRunStats};
@@ -159,6 +159,32 @@ struct HtmlContext<'a> {
     /// top_n preserves v1.0 byte-identity on synthetic-no-scores
     /// fixtures.
     has_spider: bool,
+    /// Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — Plotly throughput chart
+    /// `yaxis.title.text` server-rendered with the U+2191 glyph wrapped
+    /// in `<span aria-label="higher is better">…</span>` for WCAG 2.1
+    /// SC 1.3.3 conformance. Populated by `build_context` via
+    /// `axes::column_header_with_arrow("throughput", Direction::Higher)`.
+    /// Substituted into `index.html.tmpl` line 576 via
+    /// `{ axis_label_throughput_yaxis }`. Mirrors
+    /// `BuiltContext.axis_label_throughput_yaxis` (owned-string analog).
+    axis_label_throughput_yaxis: &'a str,
+    /// Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — latency-heatmap colorbar
+    /// title with the U+2193 glyph aria-wrapped. Substituted into
+    /// `index.html.tmpl` line 605 via `{ axis_label_latency_colorbar }`.
+    axis_label_latency_colorbar: &'a str,
+    /// Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — RSS-over-time chart
+    /// `yaxis.title.text` with the U+2193 glyph aria-wrapped. Substituted
+    /// into `index.html.tmpl` line 677 via `{ axis_label_rss_yaxis }`.
+    axis_label_rss_yaxis: &'a str,
+    /// Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — JSON-encoded array of
+    /// dashboard table-header strings (PLAIN glyphs, no aria-wrap):
+    /// `["allocator","throughput ↑","p50 ↓",...,"peak RSS ↓"]`. The JS
+    /// at `index.html.tmpl` line 851 parses this via `JSON.parse(...)`
+    /// and wraps each glyph CLIENT-SIDE at DOM-insertion time (Task 2).
+    /// Wrapping at the JS layer keeps the JSON literal compact and
+    /// re-uses the same `column_header_with_arrow` helper as the
+    /// Plotly axis labels — single source of truth lives in `axes.rs`.
+    report_table_headers_json: &'a str,
 }
 
 /// Phase 9 / Plan 09-04 — per-cell spider chart context. One instance
@@ -307,6 +333,25 @@ struct BuiltContext {
     /// D-11 / D-12 derived map: keyed by `"alloc|env|scenario"` strings.
     /// Empty `"{}"` when no `(alloc, env, scenario)` triple has ≥2 runs.
     multi_run_grouped: String,
+    /// Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — owned-string analog of
+    /// `HtmlContext.axis_label_throughput_yaxis`. Built from
+    /// `axes::column_header_with_arrow("throughput", Direction::Higher)`,
+    /// then aria-wrapped server-side: `throughput <span aria-label=
+    /// "higher is better">↑</span> (per scenario unit, see scenario.unit)`.
+    axis_label_throughput_yaxis: String,
+    /// Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — `latency <span
+    /// aria-label="lower is better">↓</span> (ns)` for the heatmap
+    /// colorbar title.
+    axis_label_latency_colorbar: String,
+    /// Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — `RSS <span aria-label=
+    /// "lower is better">↓</span> (kB)` for the RSS-over-time chart.
+    axis_label_rss_yaxis: String,
+    /// Phase 10 / Plan 10-02 / DIR-03 — JSON-encoded plain-glyph
+    /// header array consumed by the dashboard JS at template line 851.
+    /// The JS wraps each glyph CLIENT-SIDE at DOM-insertion (Task 2);
+    /// keeping the JSON plain avoids double-wrapping and keeps the
+    /// inlined literal compact.
+    report_table_headers_json: String,
 }
 
 /// Phase 9 / Plan 09-04 — per-cell spider chart pre-serialized JSON,
@@ -413,6 +458,72 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
         }
     }
 
+    // Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — single-source-of-truth
+    // axis labels via `axes::column_header_with_arrow`. The Plotly axis-
+    // title strings get aria-wrapped server-side (Plotly v2.35.3 accepts
+    // HTML in `layout.{xaxis|yaxis}.title.text` — verified). The JSON
+    // header array carries plain glyphs; the JS at template line 851
+    // wraps each glyph CLIENT-SIDE at DOM-insertion time so wrap logic
+    // lives in ONE place per surface.
+    //
+    // Glyph-after-noun ordering pinned by UI-SPEC §Layout & Interaction
+    // example (line 213) and §Copywriting Contract row. UI-SPEC was
+    // approved 2026-05-29 (6/6 PASS); this plan honors the locked
+    // example. Aria-label phrases (`higher is better` / `lower is better`)
+    // are verbatim from UI-SPEC §Accessibility.
+    let throughput_plain = column_header_with_arrow("throughput", Direction::Higher);
+    let latency_plain = column_header_with_arrow("latency", Direction::Lower);
+    let rss_plain = column_header_with_arrow("RSS", Direction::Lower);
+    let p50_plain = column_header_with_arrow("p50", Direction::Lower);
+    let p95_plain = column_header_with_arrow("p95", Direction::Lower);
+    let p99_plain = column_header_with_arrow("p99", Direction::Lower);
+    let p999_plain = column_header_with_arrow("p999", Direction::Lower);
+    let peak_rss_plain = column_header_with_arrow("peak RSS", Direction::Lower);
+
+    // Plotly axis-title strings get the aria-wrap server-side.
+    // Format: `{noun} <span aria-label="…">{arrow}</span> ({unit})` per
+    // UI-SPEC §Copywriting Contract row.
+    let axis_label_throughput_yaxis = format!(
+        "throughput <span aria-label=\"higher is better\">{arrow}</span> (per scenario unit, see scenario.unit)",
+        arrow = Direction::Higher.arrow()
+    );
+    let axis_label_latency_colorbar = format!(
+        "latency <span aria-label=\"lower is better\">{arrow}</span> (ns)",
+        arrow = Direction::Lower.arrow()
+    );
+    let axis_label_rss_yaxis = format!(
+        "RSS <span aria-label=\"lower is better\">{arrow}</span> (kB)",
+        arrow = Direction::Lower.arrow()
+    );
+
+    // Dashboard table-header array — plain glyphs (JS wraps at render
+    // time per Task 2's template substitution at line 851). The first
+    // entry is the literal `allocator` (no arrow — labels are not
+    // measurements per UI-SPEC §Copywriting Contract).
+    let report_table_headers: Vec<String> = vec![
+        "allocator".to_string(),
+        throughput_plain.clone(),
+        p50_plain.clone(),
+        p95_plain.clone(),
+        p99_plain.clone(),
+        p999_plain.clone(),
+        peak_rss_plain.clone(),
+    ];
+    // Note: this is consumed inside `<script>` via `JSON.parse(...)`, so
+    // we route through `to_script_safe_json` (escapes `<`/`>`/`&`) for
+    // CR-01 defense — same convention as every other JSON-in-script
+    // payload above. The plain glyphs (3-byte UTF-8) are NOT escaped by
+    // this wrapper — only the four ASCII characters `<`, `>`, `&` are.
+    let report_table_headers_json =
+        to_script_safe_json(&report_table_headers).context("serializing report_table_headers to JSON")?;
+
+    // Touch the unused `*_plain` bindings to defang `unused_variables`
+    // warnings — we only need clones above. The compiler infers
+    // `_unused = ...` would also work but an explicit `let _` form is
+    // clearer about intent.
+    let _ = latency_plain; // emitted via `axis_label_latency_colorbar`
+    let _ = rss_plain; // emitted via `axis_label_rss_yaxis`
+
     Ok(BuiltContext {
         results,
         scenarios: to_script_safe_json(&scenarios).context("serializing scenarios to JSON")?,
@@ -422,6 +533,10 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
             .context("serializing suspect_pairs to JSON")?,
         multi_run_grouped: to_script_safe_json(&multi_run_grouped)
             .context("serializing multi_run_grouped to JSON")?,
+        axis_label_throughput_yaxis,
+        axis_label_latency_colorbar,
+        axis_label_rss_yaxis,
+        report_table_headers_json,
     })
 }
 
@@ -594,6 +709,14 @@ fn render(
         // (top_n is truncated from cell_scores) — gating on top_n
         // is the documented contract per CONTEXT.md.
         has_spider: !top_n.is_empty(),
+        // Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — borrow the four new
+        // owned strings from `BuiltContext` so the substitution keys
+        // `{ axis_label_* }` and `{ report_table_headers_json }` resolve
+        // at template-render time. Built once per render (in `build_context`).
+        axis_label_throughput_yaxis: &ctx_owned.axis_label_throughput_yaxis,
+        axis_label_latency_colorbar: &ctx_owned.axis_label_latency_colorbar,
+        axis_label_rss_yaxis: &ctx_owned.axis_label_rss_yaxis,
+        report_table_headers_json: &ctx_owned.report_table_headers_json,
     };
     tt.render("index", &ctx).context("rendering index.html")
 }
