@@ -1505,4 +1505,111 @@ mod tests {
             "missing `\"type\":\"scatterpolar\"` substring in inlined spider traces JSON:\n{html}"
         );
     }
+
+    /// Phase 9 / Plan 09-04 (UI-REVIEW BLOCKER fix) — the rendered HTML
+    /// contains EXACTLY THREE `<div class="spider-cell">` elements,
+    /// matching the small-multiples grid spec. Each cell carries a
+    /// stable `id="spider-cell-N"` (1..=3). The OUTER
+    /// `<div id="chart-spider" class="spider-grid">` is preserved so
+    /// the existing `spider_div_present_when_data_exists` smoke test
+    /// keeps passing.
+    ///
+    /// Drift defense: a regression that re-merges the three cells into
+    /// a single overlay polar chart would drop the count below 3 and
+    /// trip this test at `cargo test` time.
+    #[test]
+    fn spider_section_emits_three_spider_cell_divs() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let top_n = make_top_n(3);
+        let scores = vec![
+            make_score("mimalloc", "alpine", 0.789),
+            make_score("jemalloc", "debian-slim", 0.756),
+            make_score("ptmalloc", "wolfi", 0.723),
+        ];
+        let html = render(&[run], &top_n, &scores).expect("render");
+
+        let cell_count = html.matches(r#"class="spider-cell""#).count();
+        assert_eq!(
+            cell_count, 3,
+            "expected exactly 3 `class=\"spider-cell\"` divs in the rendered HTML, \
+             got {cell_count} — small-multiples grid contract broken (UI-REVIEW BLOCKER):\n{html}"
+        );
+
+        // Each cell carries a stable `spider-cell-N` id (1..=3).
+        for n in 1..=3usize {
+            let needle = format!(r#"id="spider-cell-{n}""#);
+            assert!(
+                html.contains(&needle),
+                "missing `{needle}` id on per-cell div:\n{html}"
+            );
+        }
+
+        // The OUTER `<div id="chart-spider" class="spider-grid">`
+        // wrapper is preserved so the existing smoke test gate still
+        // passes; the THREE inner cells are children of it.
+        assert!(
+            html.contains(r#"<div id="chart-spider" class="spider-grid""#),
+            "missing OUTER `chart-spider` grid wrapper — \
+             smoke test `spider_div_present_when_data_exists` would break:\n{html}"
+        );
+    }
+
+    /// Phase 9 / Plan 09-04 (UI-REVIEW Pillar 3 fix) — the per-cell
+    /// layout JSON serializes `tickfont.color` as an 8-element ARRAY,
+    /// not the scalar `"#666"` that shipped pre-09-04. Indices 2 and
+    /// 6 (image_size_efficiency, security_posture — the two heuristic
+    /// axes per `MEASUREMENT_AXES`) carry `"#666"`; the other six
+    /// indices carry `"#222"`.
+    ///
+    /// The expected substring is the entire 8-element array literal —
+    /// asserting on the full sequence catches a regression that
+    /// flips a single index (e.g. heuristic-bool drift in the axes
+    /// registry) AND a regression that reverts to the scalar form
+    /// (`"color": "#666"`).
+    #[test]
+    fn angular_axis_tickfont_color_is_per_tick_array() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let top_n = make_top_n(3);
+        let scores = vec![
+            make_score("mimalloc", "alpine", 0.789),
+            make_score("jemalloc", "debian-slim", 0.756),
+            make_score("ptmalloc", "wolfi", 0.723),
+        ];
+        let html = render(&[run], &top_n, &scores).expect("render");
+
+        // Full 8-element array literal — `#666` at indices 2 and 6
+        // (image_size_efficiency, security_posture), `#222` elsewhere.
+        // The literal substring also catches a regression that
+        // collapses back to scalar `"color":"#666"`. Note: Rust raw-string
+        // delimiters bumped to `r##"..."##` because the literal contains
+        // `#222`/`#666` which would otherwise close the `r#"` form.
+        let expected_array =
+            r##""color":["#222","#222","#666","#222","#222","#222","#666","#222"]"##;
+        assert!(
+            html.contains(expected_array),
+            "missing per-tick `tickfont.color` array `{expected_array}` \
+             in inlined spider layout JSON:\n{html}"
+        );
+
+        // Negative gate: the obsolete scalar form must NOT appear in
+        // the spider layout. (`"color":"#666"` may legitimately appear
+        // elsewhere — e.g. inside a font-family CSS variable or a
+        // chart-card layout — but the Plotly tickfont in the spider
+        // layout must use the array form per UI-SPEC.)
+        assert!(
+            !html.contains(r##""tickfont":{"color":"#666""##),
+            "obsolete scalar `\"tickfont\":{{\"color\":\"#666\"`...}} \
+             form must NOT appear in spider layout:\n{html}"
+        );
+    }
 }
