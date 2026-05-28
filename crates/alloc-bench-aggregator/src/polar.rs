@@ -11,9 +11,13 @@
 //!   - `pub fn build_reference_trace(scores: &[CellScore]) -> serde_json::Value`
 //!     POLAR-04: matrix-mean reference polygon at 25% alpha
 //!     (`fillcolor: "rgba(128,128,128,0.25)"`, `line.color:
-//!     "rgba(128,128,128,0.5)"`). Hard-coded `name: "Matrix mean (n=18)"`
-//!     per UI-SPEC §Trace data array — the matrix is locked at 18 cells
-//!     by CLAUDE.md cross-libc rejection.
+//!     "rgba(128,128,128,0.5)"`). `name` interpolates `scores.len()` as
+//!     `"Matrix mean (n={N})"` so the legend is truthful for partial
+//!     inputs (unit tests, single-allocator dev runs, future matrix
+//!     expansions). In production the matrix is locked at 18 cells by
+//!     CLAUDE.md cross-libc rejection, so the rendered string is
+//!     `"Matrix mean (n=18)"` — but that is an emergent property of the
+//!     production input length, not a hard-coded literal (WR-01).
 //!   - `pub fn axis_label_for_chart(spec: &AxisSpec) -> String`
 //!     POLAR-03: appends the exact 11-byte ` (heuristic)` suffix (single
 //!     leading U+0020 space) for `image_size_efficiency` and
@@ -82,11 +86,18 @@ pub fn build_trace(score: &CellScore) -> Value {
 }
 
 /// Build the matrix-mean reference polygon at 25% fill / 50% stroke alpha.
-/// POLAR-04: averages each axis across the input scores; renders with the
-/// hard-coded literal `"Matrix mean (n=18)"` name (the matrix is locked at
-/// 18 cells by CLAUDE.md cross-libc rejection — do NOT interpolate
-/// `scores.len()` into the name string). Empty input → 9-element zero
-/// arrays (degenerate dot at origin; still closes the polygon).
+/// POLAR-04: averages each axis across the input scores; renders the
+/// legend name with the actual `scores.len()` interpolated as `n=N`.
+/// In production the matrix is locked at 18 cells by CLAUDE.md cross-libc
+/// rejection so the rendered legend will read `"Matrix mean (n=18)"`;
+/// partial inputs (single-allocator dev runs, unit-test fixtures, future
+/// matrix-size changes) will see the actual cell count rather than the
+/// stale literal. Empty input → 9-element zero arrays + `"Matrix mean
+/// (n=0)"` (degenerate dot at origin; still closes the polygon).
+///
+/// WR-01 (Phase-09 review): the hard-coded `n=18` literal lied for any
+/// scores.len() != 18 — interpolating `scores.len()` keeps the legend
+/// truthful for partial inputs and future matrix expansions.
 pub fn build_reference_trace(scores: &[CellScore]) -> Value {
     let n = scores.len();
     let mut r: Vec<f64> = MEASUREMENT_AXES
@@ -118,7 +129,7 @@ pub fn build_reference_trace(scores: &[CellScore]) -> Value {
         "fill": "toself",
         "fillcolor": "rgba(128,128,128,0.25)",
         "line": { "color": "rgba(128,128,128,0.5)" },
-        "name": "Matrix mean (n=18)",
+        "name": format!("Matrix mean (n={n})"),
         "opacity": 0.25,
     })
 }
@@ -309,8 +320,13 @@ mod tests {
 
     /// POLAR-04: the matrix-mean reference trace carries the locked alpha
     /// literals — `fillcolor: "rgba(128,128,128,0.25)"` (25% fill) and
-    /// `line.color: "rgba(128,128,128,0.5)"` (50% stroke) — plus the
-    /// hard-coded `name: "Matrix mean (n=18)"` per UI-SPEC §Trace data array.
+    /// `line.color: "rgba(128,128,128,0.5)"` (50% stroke). The `name`
+    /// field interpolates `scores.len()`, so the assertion uses the
+    /// actual input length (3 here, not the production-locked 18) per
+    /// WR-01 — interpolation keeps the legend truthful for partial
+    /// inputs and future matrix expansions. The `n=18` production case
+    /// is an emergent property of the 18-cell input slice, gated by
+    /// CLAUDE.md cross-libc rejection, not a hard-coded literal.
     #[test]
     fn reference_trace_carries_25_percent_alpha_fill_and_50_percent_alpha_stroke() {
         let scores = vec![
@@ -344,11 +360,26 @@ mod tests {
         );
         assert_eq!(
             trace["name"].as_str(),
-            Some("Matrix mean (n=18)"),
-            "POLAR-04: name literal hard-coded — matrix locked at 18 cells",
+            Some("Matrix mean (n=3)"),
+            "WR-01: `name` interpolates scores.len() — fixture supplies 3 scores",
         );
         assert_eq!(trace["fill"].as_str(), Some("toself"));
         assert_eq!(trace["type"].as_str(), Some("scatterpolar"));
+    }
+
+    /// WR-01 (Phase-09 review): the empty-input case renders
+    /// `"Matrix mean (n=0)"` rather than the obsolete hard-coded
+    /// `"Matrix mean (n=18)"` literal. Pins the interpolation contract
+    /// at the degenerate boundary so a future regression that
+    /// re-introduces the hard-coded literal trips at `cargo test` time.
+    #[test]
+    fn reference_trace_name_interpolates_zero_for_empty_input() {
+        let trace = build_reference_trace(&[]);
+        assert_eq!(
+            trace["name"].as_str(),
+            Some("Matrix mean (n=0)"),
+            "WR-01: empty input → `name` reads `Matrix mean (n=0)`",
+        );
     }
 
     /// POLAR-04: each `r[i]` is the mean across all input scores for the
