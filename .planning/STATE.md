@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
 status: executing
-stopped_at: ""
-last_updated: "2026-05-29T00:00:00Z"
-last_activity: 2026-05-29 -- Phase 09 verified (5/5 must-haves) — ROADMAP reconciled
+stopped_at: context warning at 66% (2026-05-29) — paused before plan-phase 10
+last_updated: "2026-05-29T01:00:00Z"
+last_activity: 2026-05-29 -- Phase 10 CONTEXT.md + UI-SPEC.md approved (6/6 dimensions PASS)
 progress:
   total_phases: 7
   completed_phases: 4
@@ -21,15 +21,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-17)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** Phase 10 — Direction Markers
+**Current focus:** Phase 10 — Direction Markers (paused before plan-phase)
 
 ## Current Position
 
-Phase: 09 (spider-chart) — COMPLETE (verifier PASS, 5/5 must-haves, 2026-05-28)
-Next phase: 10 (Direction Markers)
-Last activity: 2026-05-29 -- Phase 09 verified passed; ROADMAP checkboxes reconciled (6, 7, 8, 9)
+Phase: 10 (direction-markers) — DISCUSS + UI-SPEC COMPLETE, plan-phase NEXT
+Plan: 0 of N (planner not yet run)
+Next phase: 10 (continue with `/gsd:plan-phase 10`), then 11 (Golden-fixture Regen)
+Last activity: 2026-05-29 -- Phase 10 CONTEXT.md committed (c8f0835), UI-SPEC.md committed (fc6fd05) and approved (46e8c3f) — 6/6 dimensions PASS
 
-**Resume:** `/clear` then `/gsd:autonomous --from 10` — SDK picks up Phase 10 (Direction Markers, column headers + axis labels + a11y).
+**Resume:** `/clear` then `/gsd:autonomous --from 10` — SDK detects Phase 10 has CONTEXT.md + UI-SPEC.md and skips discuss/ui-phase, jumping straight to plan-phase. Or run `/gsd:plan-phase 10` manually.
+
+**v1.1 phase queue (strictly serial):**
+
+1. ✅ Phase 6: Foundations
+2. ✅ Phase 7: Scoring & Top-N
+3. ✅ Phase 8: Per-cell Artifacts
+4. ✅ Phase 9: Spider Chart (verifier PASS, 5/5 must-haves)
+5. 🚧 Phase 10: Direction Markers — discuss ✓, UI-SPEC ✓ (6/6), plan ◯, execute ◯
+6. ◯ Phase 11: Golden-fixture Regen — standalone PR; byte-identical pinning
 
 **v1.1 phase queue (strictly serial):**
 
@@ -114,10 +124,12 @@ Items acknowledged and deferred at milestone close on 2026-05-19:
 
 ## Session Continuity
 
-Last session: 2026-05-29T00:00:00Z
-Stopped at: ""
-Resume file: None
+Last session: 2026-05-29T01:00:00Z
+Stopped at: context warning at 66% (2026-05-29) — paused after UI-SPEC approval, before plan-phase
+Resume file: .planning/phases/10-direction-markers/10-UI-SPEC.md
 
 ## Operator Next Steps
 
-- Run `/gsd:autonomous --from 10` to begin Phase 10 (Direction Markers). Phases 6-9 complete.
+- Run `/clear` then `/gsd:autonomous --from 10` to resume Phase 10 (plan-phase next, then execute, code-review, ui-review). The autonomous workflow auto-detects existing CONTEXT.md + UI-SPEC.md and skips discuss/ui-phase.
+- After Phase 10 completes, Phase 11 (Golden-fixture Regen) is the v1.1 release gate — byte-identical fixture pinning, standalone PR with no production code.
+- After Phase 11 completes, the milestone lifecycle runs (audit → complete → cleanup).
