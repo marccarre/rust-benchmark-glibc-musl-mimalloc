@@ -1559,6 +1559,185 @@ mod tests {
         );
     }
 
+    /// Phase 10 / Plan 10-02 / Task 1 — DIR-03 + DIR-04 + T-10-07 mitigation.
+    ///
+    /// Asserts the rendered `index.html` carries direction-marker glyphs in
+    /// EVERY measurement-axis label and EVERY non-script `↑`/`↓` glyph is
+    /// wrapped in `<span aria-label="(higher|lower) is better">…</span>`
+    /// (WCAG 2.1 SC 1.3.3 conformance). Regex is NOT a workspace dep, so
+    /// scanning is character-by-character: every `↑`/`↓` outside the
+    /// `<script>...</script>` block must be immediately preceded by the
+    /// expected aria-span opening and immediately followed by `</span>`.
+    ///
+    /// The `<script>` block carries the JSON header array
+    /// (`report_table_headers_json`) with PLAIN glyphs — those are wrapped
+    /// CLIENT-SIDE at table-render time by JS at `index.html.tmpl` line 851.
+    /// The JSON-array assertions below (`"throughput ↑"`, `"peak RSS ↓"`)
+    /// pin the server-side bytes; the JS-side wrap is a separate template
+    /// concern.
+    ///
+    /// Server-side wrap pattern (axis-title strings emitted into Plotly
+    /// layout JSON):
+    ///   `<span aria-label="higher is better">↑</span>` for U+2191
+    ///   `<span aria-label="lower is better">↓</span>` for U+2193
+    ///
+    /// Drift defense: bare glyphs leaking into the body section (i.e. an
+    /// axis label that omits the wrap, or a regression that switches
+    /// `report_table_headers_json` to pre-wrapped strings inserted via
+    /// `textContent`) trip this test at `cargo test` time.
+    #[test]
+    fn aria_labels_wrap_direction_marker_glyphs() {
+        let run = make_test_run(
+            "jemalloc",
+            Some("alloc-bench:jemalloc-alpine"),
+            "multithread",
+            50_000,
+        );
+        let html = render(&[run], &[], &[]).expect("render");
+
+        // 1. Server-side-rendered axis labels carry the expected
+        //    aria-wrapped HTML literal.
+        let throughput_yaxis = "throughput <span aria-label=\"higher is better\">\u{2191}</span> (per scenario unit, see scenario.unit)";
+        let latency_colorbar =
+            "latency <span aria-label=\"lower is better\">\u{2193}</span> (ns)";
+        let rss_yaxis = "RSS <span aria-label=\"lower is better\">\u{2193}</span> (kB)";
+        assert!(
+            html.contains(throughput_yaxis),
+            "missing throughput yaxis label: {throughput_yaxis}\nHTML:\n{html}"
+        );
+        assert!(
+            html.contains(latency_colorbar),
+            "missing latency colorbar label: {latency_colorbar}\nHTML:\n{html}"
+        );
+        assert!(
+            html.contains(rss_yaxis),
+            "missing RSS yaxis label: {rss_yaxis}\nHTML:\n{html}"
+        );
+
+        // 2. The JSON header array (inside `<script>`) carries PLAIN
+        //    glyphs; the JS at template line 851 will wrap them with
+        //    aria-spans at table-render time. These literal substrings
+        //    are server-side bytes pinned by the JSON encoding; the
+        //    `to_script_safe_json` wrapper escapes `<`/`>`/`&` but leaves
+        //    multibyte UTF-8 like `\u{2191}` intact.
+        assert!(
+            html.contains("\"throughput \u{2191}\""),
+            "JSON header array missing `\"throughput U+2191\"`:\n{html}"
+        );
+        assert!(
+            html.contains("\"peak RSS \u{2193}\""),
+            "JSON header array missing `\"peak RSS U+2193\"`:\n{html}"
+        );
+        assert!(
+            html.contains("\"p50 \u{2193}\""),
+            "JSON header array missing `\"p50 U+2193\"`:\n{html}"
+        );
+        assert!(
+            html.contains("\"p95 \u{2193}\""),
+            "JSON header array missing `\"p95 U+2193\"`:\n{html}"
+        );
+        assert!(
+            html.contains("\"p99 \u{2193}\""),
+            "JSON header array missing `\"p99 U+2193\"`:\n{html}"
+        );
+        assert!(
+            html.contains("\"p999 \u{2193}\""),
+            "JSON header array missing `\"p999 U+2193\"`:\n{html}"
+        );
+
+        // 3. Zero bare `↑`/`↓` glyphs OUTSIDE the `<script>` block —
+        //    every glyph in the body section must be preceded by the
+        //    expected aria-span opening and followed by `</span>`.
+        //
+        //    The `<script>` block carries the JSON header array (plain
+        //    glyphs, wrapped client-side) plus inline JS fragments
+        //    (e.g. `'\u{2713} '` winner-prefix at template line 868).
+        //    Strip everything from the FIRST `<script>` to the LAST
+        //    `</script>` to defang those false positives.
+        let body = strip_script_blocks(&html);
+        let up_wrapper_open = "<span aria-label=\"higher is better\">";
+        let down_wrapper_open = "<span aria-label=\"lower is better\">";
+        let wrapper_close = "</span>";
+
+        // Walk the body char-by-char; for every `↑`/`↓`, verify the
+        // surrounding bytes match the aria-wrap pattern.
+        let bytes = body.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            // Look for the 3-byte UTF-8 sequence of U+2191 (E2 86 91)
+            // or U+2193 (E2 86 93).
+            if i + 3 <= bytes.len() && bytes[i] == 0xE2 && bytes[i + 1] == 0x86 {
+                let c3 = bytes[i + 2];
+                if c3 == 0x91 {
+                    // U+2191 ↑
+                    let opener = up_wrapper_open;
+                    assert!(
+                        i >= opener.len()
+                            && &body[i - opener.len()..i] == opener,
+                        "bare U+2191 ↑ at byte offset {i} not preceded by `{opener}` in body:\n{body}"
+                    );
+                    let after = i + 3;
+                    assert!(
+                        after + wrapper_close.len() <= body.len()
+                            && &body[after..after + wrapper_close.len()] == wrapper_close,
+                        "bare U+2191 ↑ at byte offset {i} not followed by `{wrapper_close}` in body:\n{body}"
+                    );
+                    i += 3;
+                    continue;
+                } else if c3 == 0x93 {
+                    // U+2193 ↓
+                    let opener = down_wrapper_open;
+                    assert!(
+                        i >= opener.len()
+                            && &body[i - opener.len()..i] == opener,
+                        "bare U+2193 ↓ at byte offset {i} not preceded by `{opener}` in body:\n{body}"
+                    );
+                    let after = i + 3;
+                    assert!(
+                        after + wrapper_close.len() <= body.len()
+                            && &body[after..after + wrapper_close.len()] == wrapper_close,
+                        "bare U+2193 ↓ at byte offset {i} not followed by `{wrapper_close}` in body:\n{body}"
+                    );
+                    i += 3;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+
+        // 4. The dashboard JS aria-wrap pass at template line 851 is
+        //    present (asserts the JS code that wraps each glyph at
+        //    DOM-insertion time is wired up).
+        assert!(
+            html.contains("aria-label=\\\"higher is better\\\"")
+                || html.contains("aria-label=\"higher is better\""),
+            "missing aria-wrap wiring for ↑ glyphs in dashboard JS:\n{html}"
+        );
+        assert!(
+            html.contains("aria-label=\\\"lower is better\\\"")
+                || html.contains("aria-label=\"lower is better\""),
+            "missing aria-wrap wiring for ↓ glyphs in dashboard JS:\n{html}"
+        );
+    }
+
+    /// Strip the segment from the FIRST `<script>` to the LAST `</script>`
+    /// (inclusive). The dashboard inlines a single very long `<script>`
+    /// block (Phase 4); excluding it keeps `aria_labels_wrap_direction_marker_glyphs`
+    /// focused on the server-rendered HTML body.
+    fn strip_script_blocks(html: &str) -> String {
+        let start = html.find("<script");
+        let end = html.rfind("</script>");
+        match (start, end) {
+            (Some(s), Some(e)) if e > s => {
+                let mut out = String::with_capacity(html.len());
+                out.push_str(&html[..s]);
+                out.push_str(&html[e + "</script>".len()..]);
+                out
+            }
+            _ => html.to_string(),
+        }
+    }
+
     /// Phase 9 / Plan 09-04 (UI-REVIEW Pillar 3 fix) — the per-cell
     /// layout JSON serializes `tickfont.color` as an 8-element ARRAY,
     /// not the scalar `"#666"` that shipped pre-09-04. Indices 2 and
