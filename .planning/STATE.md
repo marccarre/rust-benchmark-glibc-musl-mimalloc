@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
 status: executing
-stopped_at: context exhaustion at 75% (2026-05-28)
-last_updated: "2026-05-28T21:02:27.271Z"
+stopped_at: Phase 10 complete (10-01 + 10-02); ready for verification then Phase 11
+last_updated: "2026-05-28T21:15:40.380Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 13
-  completed_plans: 12
-  percent: 57
+  completed_plans: 13
+  percent: 71
 ---
 
 # Project State
@@ -76,6 +76,7 @@ Build-order constraint: Phase 6 blocks 7+9+10; Phase 7 blocks 8+9; Phase 10 bloc
 
 *Updated after each plan completion*
 | Phase 10 P01 | 6 min | 2 tasks | 2 files |
+| Phase 10 P10-02 | 7 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,9 @@ Recent decisions affecting current work:
 - v1.1: Equal weights across 8 axes (1/8 per axis) per milestone spec; heuristic-axis weight cap deferred to v1.2.
 - [Phase ?]: Phase 10 Plan 01: column_header_with_arrow returns String (not Cow) per CONTEXT D-claude-discretion-2 — sparse call sites, no profiler signal.
 - [Phase ?]: Phase 10 Plan 01: cross-surface SSoT helper home is axes.rs — same module as MEASUREMENT_AXES + Direction; markdown.rs (10-01) and html.rs (10-02) both consume it, drift defended by tests.
+- [Phase ?]: Phase 10 Plan 02: 4 HtmlContext fields carry aria-wrapped axis titles + plain-glyph JSON header array; html.rs consumes column_header_with_arrow from axes.rs (same SSoT helper as markdown.rs Plan 10-01); cross-surface drift defended by aria_labels_wrap_direction_marker_glyphs test.
+- [Phase ?]: Phase 10 Plan 02: tinytemplate '| unescaped' filter required on all 4 axis-label placeholders — default formatter HTML-escapes <span> brackets to &lt;span&gt;, breaking aria-wrap rendering (Rule 3 auto-fix during Task 2 verification).
+- [Phase ?]: Phase 10 Plan 02: A/B comparison chart (line 742) intentionally preserved without arrow per CONTEXT D-claude-discretion-2 / UI-SPEC §Copywriting Contract — single ↑/↓ cannot represent bidirectional '% delta (B vs A)' semantics where positive=B-faster, negative=B-slower.
 
 ### Pending Todos
 
@@ -127,9 +131,9 @@ Items acknowledged and deferred at milestone close on 2026-05-19:
 
 ## Session Continuity
 
-Last session: 2026-05-28T21:02:16.912Z
-Stopped at: context exhaustion at 75% (2026-05-28)
-Resume file: None
+Last session: 2026-05-28T21:15:40.374Z
+Stopped at: Phase 10 complete (10-01 + 10-02); ready for verification then Phase 11
+Resume file: 
 
 ## Operator Next Steps
 
