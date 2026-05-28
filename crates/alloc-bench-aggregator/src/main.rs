@@ -74,9 +74,34 @@ struct Cli {
 /// Output is `BTreeMap` (not `HashMap`) per the byte-identical-output
 /// discipline (CLAUDE.md Conventions): downstream `score::pareto_front`
 /// iterates the env keys alphabetically.
+///
+/// WR-02 (Phase-09 review):
+///   - The input `metas` is a `HashMap`, so iteration order is
+///     non-deterministic. We sort the keys alphabetically before reducing
+///     so that any tie-breaking behaviour (e.g. NaN-poisoned comparisons)
+///     produces the same result regardless of HashMap state.
+///   - Non-finite `image_size_mb` values (NaN, +/-inf) are rejected
+///     explicitly — `f64::NAN > x` returns `false` for any `x`, which
+///     would silently swallow a poisoned meta into the BTreeMap and then
+///     propagate to `score::pareto_front` (where NaN-vs-finite
+///     comparisons make the cell appear neither dominated nor dominating,
+///     inflating front membership).
 fn build_image_sizes(metas: &HashMap<(String, String), CellMeta>) -> BTreeMap<String, f64> {
+    // Sort the metas keys alphabetically before reducing per-env so the
+    // visit order is stable across runs (HashMap iteration is
+    // non-deterministic).
+    let mut sorted_keys: Vec<&(String, String)> = metas.keys().collect();
+    sorted_keys.sort();
+
     let mut out: BTreeMap<String, f64> = BTreeMap::new();
-    for ((_alloc, env), meta) in metas.iter() {
+    for key in sorted_keys {
+        let meta = &metas[key];
+        // Reject non-finite inputs — NaN/infinity in image_size_mb would
+        // silently corrupt downstream Pareto-front membership.
+        if !meta.image_size_mb.is_finite() {
+            continue;
+        }
+        let env = &key.1;
         out.entry(env.clone())
             .and_modify(|existing| {
                 if meta.image_size_mb > *existing {
@@ -241,6 +266,58 @@ mod tests {
         let metas: HashMap<(String, String), CellMeta> = HashMap::new();
         let image_sizes = build_image_sizes(&metas);
         assert!(image_sizes.is_empty(), "empty metas → empty BTreeMap");
+    }
+
+    /// WR-02 (Phase-09 review): non-finite `image_size_mb` (NaN, +/-inf)
+    /// is rejected — the env is absent from the output map rather than
+    /// silently present with a poisoned value. NaN comparisons return
+    /// `false` for `>`, `<`, `<=`, and `>=`, which would otherwise cause
+    /// `score::pareto_front` to treat the cell as neither dominated nor
+    /// dominating, inflating front membership.
+    ///
+    /// When ONLY a NaN meta exists for an env, that env is absent from
+    /// the output (the env is excluded entirely). When at least one
+    /// finite meta exists alongside a NaN, the finite value survives.
+    #[test]
+    fn image_sizes_rejects_non_finite_values() {
+        let mut metas: HashMap<(String, String), CellMeta> = HashMap::new();
+        // Two cells share the `alpine` env: one finite (52.0), one NaN.
+        // The output for `alpine` should be 52.0 (the NaN is rejected).
+        metas.insert(
+            ("ptmalloc".into(), "alpine".into()),
+            meta("ptmalloc", "alpine", 52.0),
+        );
+        metas.insert(
+            ("jemalloc".into(), "alpine".into()),
+            meta("jemalloc", "alpine", f64::NAN),
+        );
+        // `wolfi` has only a NaN meta → env should be absent from output.
+        metas.insert(
+            ("ptmalloc".into(), "wolfi".into()),
+            meta("ptmalloc", "wolfi", f64::NAN),
+        );
+        // `debian-slim` has only a +inf meta → env absent from output.
+        metas.insert(
+            ("mimalloc".into(), "debian-slim".into()),
+            meta("mimalloc", "debian-slim", f64::INFINITY),
+        );
+
+        let image_sizes = build_image_sizes(&metas);
+        // alpine survives because the finite 52.0 was retained.
+        let alpine = image_sizes.get("alpine").expect("alpine present");
+        assert!(
+            (alpine - 52.0).abs() < 1e-9,
+            "alpine should be 52.0 (NaN rejected), got {alpine}"
+        );
+        // wolfi and debian-slim are absent entirely.
+        assert!(
+            !image_sizes.contains_key("wolfi"),
+            "wolfi has only NaN meta → must be absent from output map"
+        );
+        assert!(
+            !image_sizes.contains_key("debian-slim"),
+            "debian-slim has only +inf meta → must be absent from output map"
+        );
     }
 
     /// D-13: the `--meta` flag defaults to an empty string so existing
