@@ -322,7 +322,7 @@ const SCENARIOS = { scenarios_json | unescaped };
 const ENVS = { envs_json | unescaped };
 const ALLOCATORS = { allocators_json | unescaped };
 // `\{allocator}·\{env}` keys for runs that trip the D-07 suspect predicate
-// (samples_count<10000 OR warmup_duration_s<5.0). Wrapped in a Set so the
+// (samples_count<1000 OR warmup_duration_s<5.0). Wrapped in a Set so the
 // bootstrap can decide per-option whether to render the `⚠ ` prefix.
 const SUSPECT_PAIRS = new Set({ suspect_pairs_json | unescaped });
 
@@ -335,7 +335,7 @@ const SUSPECT_PAIRS = new Set({ suspect_pairs_json | unescaped });
 const MULTI_RUN_GROUPED = { multi_run_grouped_json | unescaped };
 
 function envLabel(run) \{ return run.env.docker_image || 'host'; }
-function isSuspect(run) \{ return run.harness.samples_count < 10000 || run.harness.warmup_duration_s < 5.0; }
+function isSuspect(run) \{ return run.harness.samples_count < 1000 || run.harness.warmup_duration_s < 5.0; }
 // `·` keeps the file pure ASCII — equivalent to U+00B7 MIDDLE DOT
 // at runtime, which matches the SUSPECT_PAIRS keys emitted by html.rs.
 function suspectKey(alloc, env) \{ return alloc + '·' + env; }
@@ -850,7 +850,7 @@ function renderReportMirrorTable() \{
       const tdTput = document.createElement('td');
       const unit = (r.scenario.unit || 'ticks/s');
       tdTput.textContent = r.metrics.ticks_per_s.toFixed(1) + ' ' + unit;
-      const low = r.harness.samples_count < 10000;
+      const low = r.harness.samples_count < 1000;
       const short = r.harness.warmup_duration_s < 5.0;
       if (low || short) \{
         const note = document.createElement('span');

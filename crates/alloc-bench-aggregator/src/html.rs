@@ -646,6 +646,33 @@ mod tests {
             .expect("recommend-cell.md.tmpl should compile");
     }
 
+    /// CR-01 (Phase-09 review) regression test: the inline JS in the
+    /// `index.html.tmpl` template must NOT contain the obsolete
+    /// `< 10000` (or `<10000`) suspect-samples cutoff. The canonical
+    /// D-07 threshold was lowered to `< 1_000` in quick task 260524-5nc
+    /// and the Rust-side `is_suspect` predicate at line 78-80 was
+    /// refreshed accordingly — but three inline-JS callsites in the
+    /// template (a comment, `function isSuspect`, and the
+    /// report-mirror-table `low` check) retained the stale threshold,
+    /// producing a measurable cross-surface drift between
+    /// dashboard ⚠ prefixes and REPORT.md ⚠ suspect annotations on any
+    /// run with `1_000 ≤ samples_count < 10_000`.
+    ///
+    /// This test asserts the literal substring `10000` is absent from
+    /// the entire template. A re-introduction of the obsolete threshold
+    /// (or any new place that uses `10000` as a samples-count cutoff)
+    /// trips this gate at `cargo test` time, preventing the bug class
+    /// from recurring.
+    #[test]
+    fn template_has_no_obsolete_10000_samples_threshold() {
+        assert!(
+            !TEMPLATE.contains("10000"),
+            "index.html.tmpl must NOT contain the obsolete `10000` suspect-samples \
+             threshold (CR-01). The canonical D-07 cutoff is `< 1_000` per quick \
+             task 260524-5nc; mirror it in any inline JS that gates on `samples_count`."
+        );
+    }
+
     /// Phase 8 / Plan 01 — compile gate for the per-cell templates. Mirrors
     /// `tinytemplate_compiles_index_template`: registers both `.tmpl` files
     /// against a fresh `TinyTemplate` instance and fails at `cargo test`
