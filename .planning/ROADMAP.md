@@ -126,14 +126,14 @@ Plans:
   4. User reads `index.html` source and finds each direction-marker glyph wrapped in `<span aria-label="higher is better">↑</span>` (or `lower is better` for `↓`) for WCAG 2.1 SC 1.3.3 screen-reader accessibility
   5. User reads REPORT.md cells and finds them unchanged from v1.0 byte-stable formatting — `{:.0}` for medians in multi-run cells, `{:.1}` for throughputs in single-run cells, `{}` for ns latencies (direction markers live in headers only, never in cells)
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 **UI hint**: yes
 
 Plans:
 
 **Wave 1**
 
-- [ ] 10-01-PLAN.md — `axes::column_header_with_arrow` helper + `markdown::emit_per_scenario_tables` arrow-decorated headers + verbatim legend row + 4 tests (DIR-01, DIR-02, DIR-05)
+- [x] 10-01-PLAN.md — `axes::column_header_with_arrow` helper + `markdown::emit_per_scenario_tables` arrow-decorated headers + verbatim legend row + 4 tests (DIR-01, DIR-02, DIR-05)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -196,5 +196,5 @@ Plans:
 | 7. Scoring & Top-N | v1.1 | 2/2 | Complete   | 2026-05-26 |
 | 8. Per-cell Artifacts | v1.1 | 0/2 | Not started | - |
 | 9. Spider Chart | v1.1 | 0/? | Not started | - |
-| 10. Direction Markers | v1.1 | 0/2 | Not started | - |
+| 10. Direction Markers | v1.1 | 1/2 | In Progress|  |
 | 11. Golden-fixture Regen | v1.1 | 0/? | Not started | - |

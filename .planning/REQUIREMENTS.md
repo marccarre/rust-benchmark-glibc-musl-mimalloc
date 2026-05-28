@@ -43,11 +43,11 @@ Requirements for milestone v1.1 (Recommendations, Spider Charts & Direction Mark
 
 ### Direction Markers
 
-- [ ] **DIR-01**: User reads `REPORT.md` and finds every measurement column header in every per-scenario allocator-comparison table carrying a `↑` or `↓` glyph drawn from `axes.rs::arrow()` — e.g., `Throughput ↑ (ops/s)`, `Latency p99 ↓ (ns)`, `Peak RSS ↓ (MB)`
-- [ ] **DIR-02**: User reads `REPORT.md` and finds a one-line legend above every per-scenario table: `↑ higher is better · ↓ lower is better · ⚠ suspect run` — explicitly disclaims that the arrows are **direction markers, not column-sort indicators**
+- [x] **DIR-01**: User reads `REPORT.md` and finds every measurement column header in every per-scenario allocator-comparison table carrying a `↑` or `↓` glyph drawn from `axes.rs::arrow()` — e.g., `Throughput ↑ (ops/s)`, `Latency p99 ↓ (ns)`, `Peak RSS ↓ (MB)`
+- [x] **DIR-02**: User reads `REPORT.md` and finds a one-line legend above every per-scenario table: `↑ higher is better · ↓ lower is better · ⚠ suspect run` — explicitly disclaims that the arrows are **direction markers, not column-sort indicators**
 - [ ] **DIR-03**: User opens `report/index.html` and finds every Plotly chart's axis label injected from `axes.rs` via `{ axis_label_* }` template placeholders carrying the same `↑` / `↓` glyphs as REPORT.md — single source of truth (no hard-coded labels in `index.html.tmpl`)
 - [ ] **DIR-04**: User reads `index.html` source and finds each direction-marker glyph wrapped in `<span aria-label="higher is better">↑</span>` (or `lower is better` for `↓`) for WCAG 2.1 SC 1.3.3 screen-reader accessibility
-- [ ] **DIR-05**: User reads `REPORT.md` cells and finds them **unchanged** from v1.0 byte-stable formatting — `{:.0}` for medians in multi-run cells, `{:.1}` for throughputs in single-run cells, `{}` for ns latencies (direction markers live in headers only, never in cells)
+- [x] **DIR-05**: User reads `REPORT.md` cells and finds them **unchanged** from v1.0 byte-stable formatting — `{:.0}` for medians in multi-run cells, `{:.1}` for throughputs in single-run cells, `{}` for ns latencies (direction markers live in headers only, never in cells)
 
 ### Test & Golden-fixture Discipline
 
@@ -117,11 +117,11 @@ Coverage: 32/32 v1.1 requirements mapped to exactly one phase. No orphans. Phase
 | POLAR-03 | Phase 9 | Pending |
 | POLAR-04 | Phase 9 | Pending |
 | POLAR-05 | Phase 9 | Pending |
-| DIR-01 | Phase 10 | Pending |
-| DIR-02 | Phase 10 | Pending |
+| DIR-01 | Phase 10 | Complete |
+| DIR-02 | Phase 10 | Complete |
 | DIR-03 | Phase 10 | Pending |
 | DIR-04 | Phase 10 | Pending |
-| DIR-05 | Phase 10 | Pending |
+| DIR-05 | Phase 10 | Complete |
 | TEST-01 | Phase 11 | Pending |
 | TEST-02 | Phase 11 | Pending |
 | TEST-03 | Phase 7 | Pending |

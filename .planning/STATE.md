@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
 status: executing
-stopped_at: context warning at 66% (2026-05-29) — paused before plan-phase 10
-last_updated: "2026-05-29T01:00:00Z"
-last_activity: 2026-05-29 -- Phase 10 CONTEXT.md + UI-SPEC.md approved (6/6 dimensions PASS)
+stopped_at: context exhaustion at 75% (2026-05-28)
+last_updated: "2026-05-28T21:02:27.271Z"
+last_activity: 2026-05-28
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 12
   percent: 57
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-17)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** Phase 10 — Direction Markers (paused before plan-phase)
+**Current focus:** Phase 10 — Direction Markers
 
 ## Current Position
 
-Phase: 10 (direction-markers) — DISCUSS + UI-SPEC COMPLETE, plan-phase NEXT
-Plan: 0 of N (planner not yet run)
+Phase: 10 (Direction Markers) — EXECUTING
+Plan: 2 of 2
 Next phase: 10 (continue with `/gsd:plan-phase 10`), then 11 (Golden-fixture Regen)
-Last activity: 2026-05-29 -- Phase 10 CONTEXT.md committed (c8f0835), UI-SPEC.md committed (fc6fd05) and approved (46e8c3f) — 6/6 dimensions PASS
+Last activity: 2026-05-28
 
 **Resume:** `/clear` then `/gsd:autonomous --from 10` — SDK detects Phase 10 has CONTEXT.md + UI-SPEC.md and skips discuss/ui-phase, jumping straight to plan-phase. Or run `/gsd:plan-phase 10` manually.
 
@@ -75,6 +75,7 @@ Build-order constraint: Phase 6 blocks 7+9+10; Phase 7 blocks 8+9; Phase 10 bloc
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 10 P01 | 6 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ Recent decisions affecting current work:
 - v1.1: Decorate-not-rewrite preserved — `crates/alloc-bench-core/src/output.rs` v1 schema is NOT modified; new data rides on sidecars (`meta/security/{env}.json`) or is computed in `alloc-bench-aggregator` from existing v1 fields.
 - v1.1: p10/p90 winsorization (not p5/p95) — at N=18, `floor(0.05 × 18) = 0` collapses to raw min/max; `floor(0.1 × 18) = 1` clips one cell per tail.
 - v1.1: Equal weights across 8 axes (1/8 per axis) per milestone spec; heuristic-axis weight cap deferred to v1.2.
+- [Phase ?]: Phase 10 Plan 01: column_header_with_arrow returns String (not Cow) per CONTEXT D-claude-discretion-2 — sparse call sites, no profiler signal.
+- [Phase ?]: Phase 10 Plan 01: cross-surface SSoT helper home is axes.rs — same module as MEASUREMENT_AXES + Direction; markdown.rs (10-01) and html.rs (10-02) both consume it, drift defended by tests.
 
 ### Pending Todos
 
@@ -124,9 +127,9 @@ Items acknowledged and deferred at milestone close on 2026-05-19:
 
 ## Session Continuity
 
-Last session: 2026-05-29T01:00:00Z
-Stopped at: context warning at 66% (2026-05-29) — paused after UI-SPEC approval, before plan-phase
-Resume file: .planning/phases/10-direction-markers/10-UI-SPEC.md
+Last session: 2026-05-28T21:02:16.912Z
+Stopped at: context exhaustion at 75% (2026-05-28)
+Resume file: None
 
 ## Operator Next Steps
 
