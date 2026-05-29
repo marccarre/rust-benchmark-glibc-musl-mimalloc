@@ -214,5 +214,27 @@ mod tests {
             Some('\u{2193}'),
             "the U+2193 glyph must be the last character"
         );
+
+        // Parallel byte-level inspection for the Higher case (WR-04 fix):
+        // catches a future contributor swapping U+2191 (E2 86 91) for a
+        // look-alike like U+2192 RIGHTWARDS ARROW (E2 86 92) that would
+        // pass the character-level `assert_eq!` above but flunk on bytes.
+        let higher_header = column_header_with_arrow("throughput", Direction::Higher);
+        let higher_bytes = higher_header.as_bytes();
+        // Expected bytes: "throughput " (11 ASCII bytes: 10 letters + space) + "\u{2191}" (3 UTF-8 bytes).
+        assert_eq!(
+            higher_bytes,
+            b"throughput \xe2\x86\x91",
+            "header bytes must be label + single ASCII space (0x20) + U+2191 (0xE2 0x86 0x91); got {higher_bytes:?}"
+        );
+        assert!(
+            !higher_header.starts_with(' '),
+            "no leading whitespace permitted"
+        );
+        assert_eq!(
+            higher_header.chars().last(),
+            Some('\u{2191}'),
+            "the U+2191 glyph must be the last character"
+        );
     }
 }
