@@ -149,10 +149,15 @@ Plans:
   1. User runs `cargo test` and **all v1.0 byte-identical-output golden tests still pass** — every byte that v1.0 emitted is unchanged for inputs that don't include security sidecars (security-axis em-dash fallback applies)
   2. User reads the v1.1 PR list and finds Phase 11 (golden-fixture regeneration) shipped as a single standalone PR with no production code — Phases 6-10 PRs each carry no fixture-byte changes (test fails loudly until Phase 11 lands), so reviewer can verify the regeneration was intentional
 
-**Plans:** TBD
-**Open Questions** (defer to `/gsd:plan-phase 11`):
+**Plans:** 1 plan
 
-  - The standalone-PR convention should be promoted to a CLAUDE.md §Conventions entry before Phase 11 ships, codifying the rule for future milestones (e.g., v1.2 spider-chart additions, v2 allocator-matrix expansion).
+Plans:
+
+**Wave 1**
+
+- [ ] 11-01-PLAN.md — Doc-only release gate: cargo test verification (TEST-01) + CLAUDE.md §Conventions standalone-PR bullet (TEST-02) + 11-01-SUMMARY.md byte-count capture + REQUIREMENTS.md/STATE.md updates
+
+**Resolved Open Question:** The standalone-PR convention is promoted to CLAUDE.md §Conventions in Plan 11-01 (immediately after the Suspect run flagging bullet), codifying the rule for future milestones (e.g., v1.2 spider-chart additions, v2 allocator-matrix expansion).
 
 ## Phases
 
@@ -197,4 +202,4 @@ Plans:
 | 8. Per-cell Artifacts | v1.1 | 0/2 | Not started | - |
 | 9. Spider Chart | v1.1 | 0/? | Not started | - |
 | 10. Direction Markers | v1.1 | 2/2 | Complete    | 2026-05-28 |
-| 11. Golden-fixture Regen | v1.1 | 0/? | Not started | - |
+| 11. Golden-fixture Regen | v1.1 | 0/1 | Not started | - |
