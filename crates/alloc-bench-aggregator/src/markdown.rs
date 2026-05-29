@@ -1483,13 +1483,24 @@ mod tests {
         }
     }
 
-    /// DIR-05: data cells contain ZERO `↑` / `↓` glyphs across REPORT.md.
+    /// DIR-05: data cells contain ZERO `↑` / `↓` glyphs across the
+    /// per-scenario tables surface (the contract this test enforces).
     /// Arrows live in column headers and the legend ONLY; cells stay
     /// numeric (preserves byte-stable `{:.0}` / `{:.1}` / `{}` formatting).
-    /// Implementation: iterate every line; skip heading lines (`## `),
-    /// the legend, the table-header line (matches `| allocator |`), and
-    /// the separator (`|---`). For the remaining table data rows, count
-    /// `↑` / `↓` occurrences — must be zero.
+    /// Implementation: iterate every line in the per-scenario-tables
+    /// output; skip heading lines (`## `), the legend, the table-header
+    /// line (matches `| allocator |`), and the separator (`|---`). For
+    /// the remaining table data rows, count `↑` / `↓` occurrences — must
+    /// be zero.
+    ///
+    /// Scope note (WR-05): this test calls `emit_per_scenario_tables`
+    /// directly, so it gates ONLY the per-scenario-tables surface — NOT
+    /// the wider REPORT.md (which also contains `### {scenario}` mermaid
+    /// diagrams, per-cell `<details>` cards from `recommend-cell.md.tmpl`,
+    /// etc.). Future work (deferred): broaden the fixture to call
+    /// `build_report` end-to-end against a non-empty `top_n` and
+    /// `outcome.skipped`, then run the same line-by-line filter to gate
+    /// the full REPORT.md surface.
     #[test]
     fn data_cells_contain_no_direction_markers() {
         // Multi-scenario fixture that exercises winner-marker, suspect
