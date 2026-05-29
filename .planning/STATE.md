@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
 status: milestone_complete
-stopped_at: Milestone complete (Phase 11 was final phase)
-last_updated: 2026-05-29T19:25:11.564Z
+stopped_at: context exhaustion at 77% (2026-05-29)
+last_updated: "2026-05-29T20:34:30.216Z"
 last_activity: 2026-05-29
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 13
+  total_phases: 6
+  completed_phases: 5
+  total_plans: 15
   completed_plans: 14
-  percent: 86
+  percent: 83
 ---
 
 # Project State
@@ -132,13 +132,26 @@ Items acknowledged and deferred at milestone close on 2026-05-19:
 | verification_gap | Phase 04 — 04-VERIFICATION.md | resolved 2026-05-23 (passed) | v1.0 close |
 | verification_gap | Phase 05 — 05-VERIFICATION.md | human_needed | v1.0 close |
 
+Items acknowledged and deferred at v1.1 milestone close on 2026-05-30:
+
+| Category | Item | Status | Deferred At |
+|----------|------|--------|-------------|
+| quick_task | 260523-885-update-all-github-actions-to-latest-majo | shipped 2026-05-22 (commit 7065fbe) | v1.1 close — frontmatter status missing; work complete |
+| quick_task | 260523-8jf-fix-unreadable-html-report-layout-charts | shipped 2026-05-22 (commit 4701e60) | v1.1 close — frontmatter status missing; work complete |
+| quick_task | 260523-k8f-add-a-just-command-to-push-report-index- | shipped 2026-05-23 (commit bb36e29) | v1.1 close — frontmatter status missing; work complete |
+| quick_task | 260523-lxp-ensure-we-use-the-latest-version-of-each | shipped 2026-05-23 (commit e668b8d) | v1.1 close — frontmatter status missing; work complete |
+| quick_task | 260524-3hd-add-a-just-clean-all-to-clean-everything | shipped 2026-05-24 (commit 7f48e0d) | v1.1 close — frontmatter status missing; work complete |
+| quick_task | 260524-5nc-fix-bench-all-warmup-duration-wiring-low | shipped 2026-05-24 (commit bb360e8) | v1.1 close — frontmatter status missing; work complete |
+| tech_debt | Phase 07 — missing 07-VERIFICATION.md | code-verified via SUMMARYs + integration check (32/32 reqs satisfied) | v1.1 close — see v1.1-MILESTONE-AUDIT.md |
+| tech_debt | env_short_name duplicated in score.rs:125 + recommend.rs:457 | acknowledged in code as v1.2 consolidation candidate | v1.1 close — see v1.1-MILESTONE-AUDIT.md |
+
 ## Session Continuity
 
-Last session: 2026-05-28T21:15:40.374Z
-Stopped at: Phase 10 complete (10-01 + 10-02); ready for verification then Phase 11
+Last session: 2026-05-29T20:34:30.192Z
+Stopped at: context exhaustion at 77% (2026-05-29)
 Resume file: 
 
-## Operator Next Steps
+None
 
 - Run `/clear` then `/gsd:autonomous --from 10` to resume Phase 10 (plan-phase next, then execute, code-review, ui-review). The autonomous workflow auto-detects existing CONTEXT.md + UI-SPEC.md and skips discuss/ui-phase.
 - After Phase 10 completes, Phase 11 (Golden-fixture Regen) is the v1.1 release gate — byte-identical fixture pinning, standalone PR with no production code.
