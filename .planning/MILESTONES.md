@@ -1,6 +1,27 @@
 # Milestones
 
-## v1.0 v1.0 MVP (Shipped: 2026-05-19)
+## v1.1 Recommendations, Spider Charts & Direction Markers (Shipped: 2026-05-30)
+
+**Phases completed:** 6 phases (Phases 6-11), 14 plans, 27 tasks
+**Requirements:** 32/32 satisfied (audit status: tech_debt — see `.planning/milestones/v1.1-MILESTONE-AUDIT.md`)
+**Git range:** 261946c → 162161f (108 commits, 2026-05-26 → 2026-05-30)
+
+**Key accomplishments:**
+
+- **Phase 6 (Foundations):** `MEASUREMENT_AXES: [AxisSpec; 8]` registry + `Direction::{Higher, Lower}` enum + `arrow()` helper in `axes.rs`; six hand-curated `meta/security/{env}.json` sidecars loaded via `loader::load_security_metas() -> BTreeMap<String, SecurityMeta>`; `--security` CLI flag with em-dash fallback; SHA-256-pinned `v1_schema_output_rs_is_frozen` integration test guarding against accidental v1 schema mutation (AXES-01..02, SEC-01..03, GUARD-01).
+- **Phase 7 (Scoring & Top-N):** `score.rs` data-only scoring module (`normalize_axis`, `compute_axes`, `score_cells`, `top_n`) with p10/p90 winsorization, equal-weight composite via `MEASUREMENT_AXES.iter()` constant traversal, alphabetical `(alloc, env)` tiebreak, and NaN-poisoning guard; `recommend.rs` extended with `CellRecommendation` struct + `top_n_cells()` + three locked constants `TOP_N_SPIDER=3 / TOP_N_TABLE=5 / TOP_N_TOTAL=10`; existing 13 `recommendations()` tests untouched (SCORE-01..04, REC-01..02, TEST-03..05).
+- **Phase 8 (Per-cell Artifacts):** Two-template (`recommend-cell.md.tmpl` + `recommend-cell.html.tmpl`) driven by the same `CellRecommendation` — Markdown card + HTML panel field-by-field identical, drift caught at compile time via `cell_templates_both_reference_all_fields` sentinel test; ten per-cell `.md`/`.html` fragments emitted to `report/`; `## Top 10 cells` section in REPORT.md (top-5 above-fold, 5 in `<details>`); data-derived TL;DR → Strengths → Weaknesses → Recommended-for → Avoid-for prose (CELL-01..05).
+- **Phase 9 (Spider Chart):** `polar.rs` shipped with `build_trace`, `build_reference_trace`, `axis_label_for_chart` and 9 unit tests locking the 9-element polygon-closure invariant; `<div id="chart-spider">` renders top-3 cells above-fold as small-multiples grid with matrix-mean reference polygon at 25% alpha; `(heuristic)` suffix + per-tick tickfont color #666 distinguishes heuristic axes; `PLOTLY_SRI_HASH` constant + `plotly_sri_hash_unchanged` test pin v2.35.3; `pareto_front` + `★` glyph add Pareto-front overlay column (POLAR-01..05).
+- **Phase 10 (Direction Markers):** `column_header_with_arrow` SSoT helper added to `axes.rs`, consumed by both `markdown::emit_per_scenario_tables` (REPORT.md surface) and `html::build_context` (chart axis labels — index.html surface); verbatim `↑ higher is better · ↓ lower is better · ⚠ suspect run` legend above every per-scenario table; `<span aria-label="…">` aria-wrapping for WCAG 2.1 SC 1.3.3 conformance via server-side template + JS post-render pass; cells unchanged — markers live in headers only (DIR-01..05).
+- **Phase 11 (Golden-fixture Regen):** v1.1 release gate — standalone doc-only PR pattern codified in CLAUDE.md §Conventions; v1.0 byte-identical-output golden tests still pass through Phase 6-10 additions; rendered-fixture byte-counts captured for the v1.1 lock (TEST-01..02).
+
+**Technical debt deferred to v1.2:** Phase 7 missing `07-VERIFICATION.md` (code-verified via SUMMARYs + integration check; documentation gap only); `env_short_name` duplicated in `score.rs:125` + `recommend.rs:457` (acknowledged in code as v1.2 consolidation candidate).
+
+**Known deferred items at close:** 8 (see STATE.md Deferred Items — 6 quick-task frontmatter status fields + 2 tech-debt items above).
+
+---
+
+## v1.0 MVP (Shipped: 2026-05-19)
 
 **Phases completed:** 5 phases, 17 plans, 71 tasks
 

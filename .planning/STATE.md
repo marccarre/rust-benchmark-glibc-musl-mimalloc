@@ -1,56 +1,34 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: Phases
+milestone_name: Recommendations, Spider Charts & Direction Markers
 status: milestone_complete
-stopped_at: context exhaustion at 77% (2026-05-29)
-last_updated: "2026-05-29T20:34:30.216Z"
-last_activity: 2026-05-29
+stopped_at: null
+last_updated: "2026-05-30T07:00:00Z"
+last_activity: 2026-05-30 — Milestone v1.1 closed (archived + tagged)
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 15
+  completed_phases: 6
+  total_plans: 14
   completed_plans: 14
-  percent: 83
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-17)
+See: .planning/PROJECT.md (updated 2026-05-30 after v1.1 milestone)
 
 **Core value:** Every result is reproducible, environment-labelled, and visually comparable — so the reader can confidently recommend the right allocator for a given workload.
-**Current focus:** Milestone complete
+**Current focus:** Planning next milestone (run `/gsd:new-milestone`)
 
 ## Current Position
 
-Phase: 11
-Plan: Not started
-Next phase: 10 (continue with `/gsd:plan-phase 10`), then 11 (Golden-fixture Regen)
-Last activity: 2026-05-29
-
-**Resume:** `/clear` then `/gsd:autonomous --from 10` — SDK detects Phase 10 has CONTEXT.md + UI-SPEC.md and skips discuss/ui-phase, jumping straight to plan-phase. Or run `/gsd:plan-phase 10` manually.
-
-**v1.1 phase queue (strictly serial):**
-
-1. ✅ Phase 6: Foundations
-2. ✅ Phase 7: Scoring & Top-N
-3. ✅ Phase 8: Per-cell Artifacts
-4. ✅ Phase 9: Spider Chart (verifier PASS, 5/5 must-haves)
-5. 🚧 Phase 10: Direction Markers — discuss ✓, UI-SPEC ✓ (6/6), plan ◯, execute ◯
-6. ◯ Phase 11: Golden-fixture Regen — standalone PR; byte-identical pinning
-
-**v1.1 phase queue (strictly serial):**
-
-1. Phase 6: Foundations — axes registry + security sidecars + frozen-schema guard (6 reqs)
-2. Phase 7: Scoring & Top-N — normalization + composite + recommendation struct + scoring guards (9 reqs)
-3. Phase 8: Per-cell Artifacts — Markdown + HTML cards via two templates (5 reqs)
-4. Phase 9: Spider Chart — `polar.rs` + chart wiring + Pareto overlay (5 reqs)
-5. Phase 10: Direction Markers — column headers + axis labels + legend + a11y (5 reqs)
-6. Phase 11: Golden-fixture Regen — standalone PR; byte-identical pinning (2 reqs)
-
-Build-order constraint: Phase 6 blocks 7+9+10; Phase 7 blocks 8+9; Phase 10 blocks 11.
+Phase: Milestone v1.1 complete (Phases 6-11 archived to `.planning/milestones/v1.1-phases/`)
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-05-30 — Milestone v1.1 closed (archived + tagged)
 
 ## Performance Metrics
 
@@ -156,3 +134,7 @@ None
 - Run `/clear` then `/gsd:autonomous --from 10` to resume Phase 10 (plan-phase next, then execute, code-review, ui-review). The autonomous workflow auto-detects existing CONTEXT.md + UI-SPEC.md and skips discuss/ui-phase.
 - After Phase 10 completes, Phase 11 (Golden-fixture Regen) is the v1.1 release gate — byte-identical fixture pinning, standalone PR with no production code.
 - After Phase 11 completes, the milestone lifecycle runs (audit → complete → cleanup).
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
