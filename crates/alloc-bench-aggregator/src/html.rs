@@ -475,8 +475,6 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
     // example. Aria-label phrases (`higher is better` / `lower is better`)
     // are verbatim from UI-SPEC §Accessibility.
     let throughput_plain = column_header_with_arrow("throughput", Direction::Higher);
-    let latency_plain = column_header_with_arrow("latency", Direction::Lower);
-    let rss_plain = column_header_with_arrow("RSS", Direction::Lower);
     let p50_plain = column_header_with_arrow("p50", Direction::Lower);
     let p95_plain = column_header_with_arrow("p95", Direction::Lower);
     let p99_plain = column_header_with_arrow("p99", Direction::Lower);
@@ -512,20 +510,15 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
         p999_plain.clone(),
         peak_rss_plain.clone(),
     ];
-    // Note: this is consumed inside `<script>` via `JSON.parse(...)`, so
-    // we route through `to_script_safe_json` (escapes `<`/`>`/`&`) for
-    // CR-01 defense — same convention as every other JSON-in-script
-    // payload above. The plain glyphs (3-byte UTF-8) are NOT escaped by
-    // this wrapper — only the four ASCII characters `<`, `>`, `&` are.
+    // Note: this is consumed inside `<script>` as a direct JS-literal
+    // substitution (template line 861: `const reportTableHeaders = { ... |
+    // unescaped };`) rather than via `JSON.parse(...)`, but we still route
+    // through `to_script_safe_json` (escapes `<`/`>`/`&`) for the same
+    // CR-01 defense applied to every other JSON-in-script payload above.
+    // The plain glyphs (3-byte UTF-8) are NOT escaped by this wrapper —
+    // only the four ASCII characters `<`, `>`, `&` are.
     let report_table_headers_json =
         to_script_safe_json(&report_table_headers).context("serializing report_table_headers to JSON")?;
-
-    // Touch the unused `*_plain` bindings to defang `unused_variables`
-    // warnings — we only need clones above. The compiler infers
-    // `_unused = ...` would also work but an explicit `let _` form is
-    // clearer about intent.
-    let _ = latency_plain; // emitted via `axis_label_latency_colorbar`
-    let _ = rss_plain; // emitted via `axis_label_rss_yaxis`
 
     Ok(BuiltContext {
         results,
