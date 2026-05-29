@@ -858,7 +858,7 @@ function renderReportMirrorTable() \{
     // with `<span aria-label="…">` for WCAG 2.1 SC 1.3.3 (T-10-07).
     // T-10-08 (innerHTML XSS): the JSON source is `axes.rs` + fixed
     // labels, no user-controlled input — see PLAN.md threat_model.
-    const reportTableHeaders = JSON.parse('{ report_table_headers_json | unescaped }');
+    const reportTableHeaders = { report_table_headers_json | unescaped };
     for (const label of reportTableHeaders) \{
       const th = document.createElement('th');
       th.innerHTML = label

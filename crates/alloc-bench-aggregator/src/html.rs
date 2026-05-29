@@ -179,11 +179,14 @@ struct HtmlContext<'a> {
     /// Phase 10 / Plan 10-02 / DIR-03 + DIR-04 — JSON-encoded array of
     /// dashboard table-header strings (PLAIN glyphs, no aria-wrap):
     /// `["allocator","throughput ↑","p50 ↓",...,"peak RSS ↓"]`. The JS
-    /// at `index.html.tmpl` line 851 parses this via `JSON.parse(...)`
-    /// and wraps each glyph CLIENT-SIDE at DOM-insertion time (Task 2).
-    /// Wrapping at the JS layer keeps the JSON literal compact and
-    /// re-uses the same `column_header_with_arrow` helper as the
-    /// Plotly axis labels — single source of truth lives in `axes.rs`.
+    /// at `index.html.tmpl` line 861 inlines this directly as a JS
+    /// literal (`const reportTableHeaders = { ... | unescaped };`) — JSON
+    /// is a strict subset of JS literal syntax, so no `JSON.parse(...)`
+    /// wrapper is needed. The JS then wraps each glyph CLIENT-SIDE at
+    /// DOM-insertion time (Task 2). Wrapping at the JS layer keeps the
+    /// inlined literal compact and re-uses the same
+    /// `column_header_with_arrow` helper as the Plotly axis labels —
+    /// single source of truth lives in `axes.rs`.
     report_table_headers_json: &'a str,
 }
 
