@@ -1,52 +1,45 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-27T22:57:59Z",
-  "phase": "09",
-  "phase_name": "Spider Chart",
-  "phase_dir": ".planning/phases/09-spider-chart",
-  "plan": "09-02",
+  "timestamp": "2026-05-30T05:30:00Z",
+  "phase": "milestone-close",
+  "phase_name": "v1.1 milestone close (round 3)",
+  "phase_dir": null,
+  "plan": null,
   "task": null,
-  "total_tasks": null,
+  "total_tasks": 13,
   "status": "paused",
+  "context_pause_reason": "Context warning at 66% — same checkpoint as round 1 (77%) and round 2 (66%). User chose clean pause to preserve next-session budget for the heavier remaining work (PROJECT.md evolution, retrospective append, archive moves).",
   "completed_tasks": [
-    {"id": "09-01-execute", "name": "Plan 09-01 polar.rs trace builder — executed and merged into main", "status": "done", "merged": true, "main_head_after_merge": "61562c5"},
-    {"id": "09-02-execute", "name": "Plan 09-02 pareto-front data foundations — executed; commits in worktree branch but NOT yet merged", "status": "done_unmerged", "branch": "worktree-agent-ac02f0dbda541acb3", "branch_head": "23e77c7"}
+    {"id": "pre-close-audit", "name": "Pre-close artifact audit (gsd-sdk audit-open)", "status": "done", "result": "6 quick tasks flagged 'missing' frontmatter — already acknowledged in STATE.md Deferred Items at v1.1 close (work shipped, frontmatter status field absent). User confirmed Acknowledge-all path."},
+    {"id": "verify-readiness", "name": "Verify v1.1 readiness + gather stats", "status": "done", "result": "All 6 phases (6-11) disk_status: complete. 14 plans total. 32/32 requirements satisfied per audit. Stats: +5,658/-26 LOC across 14 files (excl .planning/meta), 108 commits, 2026-05-26 → 2026-05-30, range 261946c → 162161f."},
+    {"id": "flip-requirements", "name": "Flip remaining 25 v1.1 REQUIREMENTS.md checkboxes to [x]", "status": "done", "result": "AXES-01..02, SEC-01..03, GUARD-01, SCORE-01..04, REC-01..02, CELL-01..05, POLAR-01..05, TEST-03..05 all flipped. Traceability table all rows now Complete. Last-updated footer bumped to 2026-05-30."},
+    {"id": "extract-accomplishments", "name": "Extract accomplishments from SUMMARYs", "status": "done", "result": "One-liners gathered from gsd-sdk summary-extract for 13 of 14 plans (08-01, 08-02 returned null but their tags/key-files captured). Accomplishments draft below."},
+    {"id": "restore-sidecars", "name": "Restore meta/security/*.json (6 files) from git", "status": "done", "result": "User confirmed restore. `git checkout -- meta/security/` ran clean. Working tree now matches HEAD for those 6 files. SEC-01/02/03 satisfaction preserved."}
   ],
   "remaining_tasks": [
-    {"id": "09-02-merge", "name": "Merge worktree-agent-ac02f0dbda541acb3 into main (the branch already includes 23e77c7 which merged 09-01 in, so this is a fast-forward producing identical history to a normal post-wave merge)", "status": "not_started"},
-    {"id": "09-02-cleanup", "name": "Force-remove worktree + branch: 'git worktree remove --force .claude/worktrees/agent-ac02f0dbda541acb3 && git branch -D worktree-agent-ac02f0dbda541acb3'", "status": "not_started"},
-    {"id": "stale-worktree-cleanup", "name": "Force-remove stale worktree agent-ae4d005dedb887815 from prior session (locked, not in current manifest)", "status": "not_started"},
-    {"id": "post-merge-gate-w1", "name": "Run cargo test -p alloc-bench-aggregator after Wave 1 merges (expect transitive build failure per documented Wave-1 -> Wave-2 handoff contract; per-module tests pass)", "status": "not_started"},
-    {"id": "wave-2-shared-update", "name": "Orchestrator commits STATE.md + ROADMAP.md plan progress for 09-01 and 09-02 (workflow §5.7)", "status": "not_started"},
-    {"id": "09-03", "name": "Dispatch Wave 2 plan 09-03 (HTML/Markdown wiring of polar + Pareto)", "status": "not_started"},
-    {"id": "phase-09-complete", "name": "code-review + fix chain, regression gate, verifier (POLAR-01..05), UI-review audit, phase.complete 09", "status": "not_started"},
-    {"id": "phase-09-followups", "name": "Phase 10 (Direction Markers) full cycle, Phase 11 (Golden-fixture Regen), milestone v1.1 lifecycle: audit -> complete -> cleanup", "status": "not_started"}
+    {"id": "milestone-complete-sdk", "name": "Run gsd-sdk query milestone.complete \"v1.1\" --name \"Recommendations, Spider Charts & Direction Markers\"", "status": "not_started", "notes": "Will create .planning/milestones/v1.1-ROADMAP.md, v1.1-REQUIREMENTS.md, move v1.1-MILESTONE-AUDIT.md, append MILESTONES.md entry, update STATE.md."},
+    {"id": "reorg-roadmap", "name": "Reorganize ROADMAP.md (preserve Backlog if any)", "status": "not_started", "notes": "Current ROADMAP.md has NO ## Backlog section (verified during readiness check) — safe to overwrite without backlog extraction. Collapse v1.1 into <details> alongside v1.0."},
+    {"id": "evolve-project-md", "name": "PROJECT.md full evolution review", "status": "not_started", "notes": "Move 32 v1.1 requirements to Validated (currently empty Active section says 'see REQUIREMENTS.md'). Audit Out of Scope. Add v1.1 Key Decisions: equal weights, decorate-not-rewrite preserved, p10/p90 winsorization, BTreeMap for security sidecars, byte-identical-output discipline preserved through Phase 10 + golden-fixture regen as Phase 11. Update Last updated footer."},
+    {"id": "phase-dir-archive", "name": "Archive .planning/phases/{06-11}-* to .planning/milestones/v1.1-phases/", "status": "not_started", "notes": "User question via AskUserQuestion: AskUserQuestion(header='Archive Phases', question='Archive phase directories to milestones/?', options: 'Yes — move to milestones/v1.1-phases/' | 'Skip — keep phases in place'). Recommend Yes per v1.0 precedent (.planning/milestones/v1.0-phases/ exists)."},
+    {"id": "safety-commit", "name": "Safety commit archive files + ROADMAP + PROJECT + STATE + MILESTONES", "status": "not_started", "notes": "gsd-sdk query commit \"chore: archive v1.1 milestone files\" --files .planning/milestones/v1.1-ROADMAP.md .planning/milestones/v1.1-REQUIREMENTS.md .planning/milestones/v1.1-MILESTONE-AUDIT.md .planning/MILESTONES.md .planning/PROJECT.md .planning/STATE.md .planning/ROADMAP.md"},
+    {"id": "rm-requirements", "name": "git rm .planning/REQUIREMENTS.md", "status": "not_started", "notes": "Standalone deletion staging."},
+    {"id": "retrospective-append", "name": "Append v1.1 section to RETROSPECTIVE.md", "status": "not_started", "notes": "Insert new ## Milestone: v1.1 section BEFORE ## Cross-Milestone Trends. Update Process Evolution + Cumulative Quality + Top Lessons tables. Commit as docs: update retrospective for v1.1."},
+    {"id": "state-md-update", "name": "Update STATE.md with fresh project reference", "status": "not_started", "notes": "Set status: milestone_complete, current_focus: 'Planning next milestone', preserve Deferred Items section. The status: milestone_complete may already be set per round 2 work."},
+    {"id": "git-tag", "name": "Create v1.1 git tag", "status": "not_started", "notes": "git tag -a v1.1 -m '...'. Pre-check: tag may already exist if a prior round attempted. Skip if exists. Ask user about pushing."},
+    {"id": "final-commit", "name": "chore: remove REQUIREMENTS.md for v1.1 milestone", "status": "not_started", "notes": "Final commit picking up the staged deletion."},
+    {"id": "next-steps", "name": "Surface next steps to user", "status": "not_started", "notes": "Recommend /clear then /gsd:new-milestone."}
   ],
-  "blockers": [
-    {
-      "description": "09-02 branch fails 'gsd-sdk worktree.cleanup-wave' because expected_base in manifest (722437c) no longer matches main HEAD (61562c5 after 09-01 merged). The branch already includes a merge commit (23e77c7) bringing 09-01 in, so the merge into main is a fast-forward.",
-      "type": "technical",
-      "workaround": "Manual merge from primary worktree: 'git merge worktree-agent-ac02f0dbda541acb3 --no-ff --no-edit -m \"chore: merge executor worktree (worktree-agent-ac02f0dbda541acb3)\"' then 'git worktree remove --force .claude/worktrees/agent-ac02f0dbda541acb3 && git branch -D worktree-agent-ac02f0dbda541acb3'."
-    },
-    {
-      "description": "Stale worktree agent-ae4d005dedb887815 from prior session is locked (not in current wave manifest). Should be force-removed before next wave dispatch to avoid worktree-list confusion.",
-      "type": "technical",
-      "workaround": "git worktree unlock /Users/marc.carre/src/rust-benchmark-glibc-musl-mimalloc/.claude/worktrees/agent-ae4d005dedb887815 && git worktree remove --force /Users/marc.carre/src/rust-benchmark-glibc-musl-mimalloc/.claude/worktrees/agent-ae4d005dedb887815 && git branch -D worktree-agent-ae4d005dedb887815"
-    },
-    {
-      "description": "Post-merge build/test gate after Wave 1 will FAIL by design (Wave-1 -> Wave-2 handoff contract — top_n_cells signature widened in 09-02, callsites stubbed in main.rs/markdown.rs/html.rs but not yet rewired). Per Plan 09-02's documented contract, full-tree cargo build fails between waves; per-module tests pass.",
-      "type": "technical",
-      "workaround": "Read get-shit-done/workflows/execute-phase/steps/post-merge-gate.md to confirm gate policy. If hard-blocking, document override and proceed. The signature mismatch will be resolved by Plan 09-03 in Wave 2."
-    }
-  ],
+  "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "Pause at 65% context budget after both Wave 1 plans completed but before 09-02 worktree merge fully resolved", "rationale": "Continuing through 09-02 manual merge + post-merge gate + Wave 2 dispatch + verifier + code-review + UI-review + phase.complete would risk mid-flight context exhaustion. Wave boundary is the cleanest checkpoint.", "phase": "09"},
-    {"decision": "Leave STATE.md uncommitted — orchestrator owns post-wave commit per workflow §5.7", "rationale": "state.begin-phase modified STATE.md but the resume will regenerate values via init.execute-phase + state.begin-phase before any commit.", "phase": "09"},
-    {"decision": "09-01 merged via gsd-sdk worktree.cleanup-wave (commit 61562c5). 09-02 cleanup blocked by base-mismatch — its expected_base 722437c no longer matches main HEAD.", "rationale": "Each cleanup-wave entry validates expected_base against current HEAD. After the first merge advances main, the second entry's pre-recorded expected_base becomes stale. This is a known limitation when waves contain >1 plan and merges process sequentially.", "phase": "09"},
-    {"decision": "Stale worktree agent-ae4d005dedb887815 from prior pause-work session left in place (not removed during pause)", "rationale": "Not in current wave manifest. Locked. Removing during a paused-mid-wave state risks losing prior context. Defer cleanup to next session start.", "phase": "09"}
+    {"decision": "Restored 6 meta/security/*.json sidecars from git (git checkout -- meta/security/)", "rationale": "All 6 were deleted in working tree but tracked in git (added by 261946c for SEC-01). Required for v1.1 audit-confirmed satisfaction of SEC-01/02/03.", "phase": "milestone-close"},
+    {"decision": "Flipped all 25 remaining v1.1 REQUIREMENTS.md checkboxes to [x] inline (not via SDK)", "rationale": "Per audit, all 32 requirements are code-verified. The remaining 25 boxes were the audit's documented post-close action.", "phase": "milestone-close"},
+    {"decision": "Acknowledge-all path for 6 quick-task missing frontmatter", "rationale": "STATE.md already records the deferral from prior round; re-acknowledging continues the prior context.", "phase": "milestone-close"},
+    {"decision": "Pause at 66% context — same checkpoint as rounds 1 and 2", "rationale": "Heavier remaining work (PROJECT.md evolution + retrospective append + archive moves) needs a fresh budget. Surgical work done this session is safe to commit.", "phase": "milestone-close"}
   ],
-  "uncommitted_files": [".planning/STATE.md (modified by state.begin-phase; will be regenerated on resume)"],
-  "next_action": "1. cd /Users/marc.carre/src/rust-benchmark-glibc-musl-mimalloc. 2. git checkout .planning/STATE.md (revert begin-phase edit; will be regenerated). 3. Manually merge 09-02: 'git merge worktree-agent-ac02f0dbda541acb3 --no-ff --no-edit -m \"chore: merge executor worktree (worktree-agent-ac02f0dbda541acb3)\"'. 4. Force-remove 09-02 worktree: 'git worktree remove --force .claude/worktrees/agent-ac02f0dbda541acb3 && git branch -D worktree-agent-ac02f0dbda541acb3'. 5. Force-remove stale worktree (unlock then remove agent-ae4d005dedb887815). 6. Run 'cargo build -p alloc-bench-aggregator' to confirm Wave-1->Wave-2 handoff state (transitive build broken is expected). 7. Run 'cargo test -p alloc-bench-aggregator --lib' to confirm per-module tests still green. 8. Resume autonomous: '/gsd:autonomous --from 9' — it will skip 09-01 and 09-02 (SUMMARY.md exists for both), dispatch Wave 2 (09-03), then run code-review + verifier + UI-review.",
-  "context_notes": "Phase 9 Wave 1 went smoothly. Both executor agents succeeded with no deviations. The cleanup-wave SDK validates expected_base per-entry, which causes the second wave member to fail validation after the first merge advances main. This is purely procedural — the 09-02 branch already includes the 09-01 merge, so the manual merge produces identical history to what cleanup-wave would have produced. Resume should be fast: ~5 minutes of cleanup, then Wave 2 dispatch (single plan, ~10 min executor + verifier). Phase 9 should complete cleanly on the next session, leaving Phases 10-11 + lifecycle for one more autonomous --from 10 invocation."
+  "uncommitted_files": [
+    ".planning/REQUIREMENTS.md (25 checkboxes flipped + traceability table updated + footer bumped)"
+  ],
+  "next_action": "1. cd /Users/marc.carre/src/rust-benchmark-glibc-musl-mimalloc. 2. Verify state: `git status --short` should be clean (this handoff commits REQUIREMENTS.md + HANDOFF.json). 3. Resume: `/clear` then `/gsd-complete-milestone v1.1` will pick up at task #5 (gsd-sdk milestone.complete). The skill will re-run pre-close audit and verify-readiness — both cheap. 4. Confirm v1.1 tag does not yet exist: `git tag -l v1.1`. 5. Run gsd-sdk query milestone.complete \"v1.1\" --name \"Recommendations, Spider Charts & Direction Markers\". 6. Reorganize ROADMAP.md (NO Backlog section to preserve — verified). 7. PROJECT.md evolution. 8. Archive phase dirs (recommend Yes). 9. Safety commit. 10. git rm REQUIREMENTS.md. 11. Append RETROSPECTIVE.md v1.1 section. 12. STATE.md polish. 13. git tag v1.1. 14. Final commit. 15. Surface /gsd:new-milestone.",
+  "context_notes": "Round 3 of v1.1 milestone close — surgical work done this session: requirements checkboxes flipped (the audit's documented post-close action) + sidecar restoration. Remaining work is mostly orchestration via gsd-sdk milestone.complete + targeted file edits. Estimated context: PROJECT.md evolution is the heaviest single edit (~150 LOC). Retrospective append ~80 LOC. ROADMAP reorg ~60 LOC. Archive moves are bash-only. If next session also stalls, the safe boundary is post-milestone.complete + before PROJECT.md evolution — that locks the archive in git and PROJECT.md evolution can resume from a clean state. Important: Phase 9 has 4 plans (not 3 as ROADMAP listed earlier in the milestone) — 09-04 was added to close UI BLOCKER. ROADMAP currently shows '0/?' for Phase 9 which is wrong; reorg should set it to 4/4."
 }

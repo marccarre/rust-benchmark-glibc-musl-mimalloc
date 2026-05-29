@@ -9,37 +9,37 @@ Requirements for milestone v1.1 (Recommendations, Spider Charts & Direction Mark
 
 ### Foundations
 
-- [ ] **AXES-01**: User reads `axes.rs` and finds a single `MEASUREMENT_AXES: [AxisSpec; 8]` const registry covering channel throughput, memory/fragmentation, web, multithread, cpu-bound, resilience, image-size efficiency (heuristic), security posture (heuristic) — alphabetically keyed, consumed by `score.rs`, `polar.rs`, and `markdown.rs` table-header builders
-- [ ] **AXES-02**: User reads `axes.rs` and finds a `Direction::{Higher, Lower}` enum plus an `arrow()` helper returning `\u{2191}` (↑) for `Higher` and `\u{2193}` (↓) for `Lower` — single source of truth for direction-marker glyphs
-- [ ] **SEC-01**: User runs `just aggregate --security 'meta/security/*.json'` and the aggregator loads six hand-curated `meta/security/{env}.json` sidecars (alpine, debian-slim, distroless-cc, distroless-static, scratch, wolfi) — each with shape `{ env: String, score: u8 (0..=100), rationale: String, captured_at: String }`
-- [ ] **SEC-02**: User reads `loader.rs` and finds `SecurityMeta` struct + `load_security_metas()` returning `BTreeMap<String, SecurityMeta>` (NOT `HashMap` — byte-identical-output discipline) mirroring the existing `load_cell_metas` plumbing
-- [ ] **SEC-03**: User runs `just aggregate` without `--security` and the aggregator falls back to `score = 0` with em-dash tooltip in the security axis (mirrors v1.0 docker_runtimes em-dash convention; preserves byte-identical output and stable 8-axis spider shape)
-- [ ] **GUARD-01**: User runs `cargo test` and the test `smoke::tests::v1_schema_output_rs_is_frozen` pins a SHA-256 of `crates/alloc-bench-core/src/output.rs` to its v1.0 freeze — guards against accidental v1 schema mutation (CLAUDE.md Conventions: Aggregator decorate-not-rewrite)
+- [x] **AXES-01**: User reads `axes.rs` and finds a single `MEASUREMENT_AXES: [AxisSpec; 8]` const registry covering channel throughput, memory/fragmentation, web, multithread, cpu-bound, resilience, image-size efficiency (heuristic), security posture (heuristic) — alphabetically keyed, consumed by `score.rs`, `polar.rs`, and `markdown.rs` table-header builders
+- [x] **AXES-02**: User reads `axes.rs` and finds a `Direction::{Higher, Lower}` enum plus an `arrow()` helper returning `\u{2191}` (↑) for `Higher` and `\u{2193}` (↓) for `Lower` — single source of truth for direction-marker glyphs
+- [x] **SEC-01**: User runs `just aggregate --security 'meta/security/*.json'` and the aggregator loads six hand-curated `meta/security/{env}.json` sidecars (alpine, debian-slim, distroless-cc, distroless-static, scratch, wolfi) — each with shape `{ env: String, score: u8 (0..=100), rationale: String, captured_at: String }`
+- [x] **SEC-02**: User reads `loader.rs` and finds `SecurityMeta` struct + `load_security_metas()` returning `BTreeMap<String, SecurityMeta>` (NOT `HashMap` — byte-identical-output discipline) mirroring the existing `load_cell_metas` plumbing
+- [x] **SEC-03**: User runs `just aggregate` without `--security` and the aggregator falls back to `score = 0` with em-dash tooltip in the security axis (mirrors v1.0 docker_runtimes em-dash convention; preserves byte-identical output and stable 8-axis spider shape)
+- [x] **GUARD-01**: User runs `cargo test` and the test `smoke::tests::v1_schema_output_rs_is_frozen` pins a SHA-256 of `crates/alloc-bench-core/src/output.rs` to its v1.0 freeze — guards against accidental v1 schema mutation (CLAUDE.md Conventions: Aggregator decorate-not-rewrite)
 
 ### Scoring & Top-N
 
-- [ ] **SCORE-01**: User reads `score.rs` and finds `normalize_axis(values: &[f64], direction: Direction) -> Vec<f64>` mapping each input to `[0.0, 100.0]` with direction-aware inversion — `Higher` keeps order, `Lower` inverts
-- [ ] **SCORE-02**: User reads `score.rs` and finds **p10/p90 winsorization** applied before min-max normalization (chosen over p5/p95 because `floor(0.05 × 18) = 0` collapses to raw min/max at N=18; `floor(0.1 × 18) = 1` clips one cell per tail) — guarded by `score::tests::normalize_axis_p10_p90_clips_one_outlier_each_tail_at_n18`
-- [ ] **SCORE-03**: User reads `score.rs` and finds `compute_axes(runs, metas, security_metas) -> Vec<CellAxes>` and `score_cells(...) -> Vec<CellScore>` — composite weighted-sum score using equal weights (1/8 per axis, per milestone spec); summation traverses `MEASUREMENT_AXES` constant order (NOT collected into a `Vec` — single-ULP drift from non-deterministic order corrupts ties)
-- [ ] **SCORE-04**: User reads `score.rs` and finds `top_n(scores, n) -> Vec<CellScore>` returning the top-N cells with **alphabetical `(alloc, env)` tiebreak** for any cells that tie on composite score — guarded by `score::tests::tied_cells_break_alphabetically_for_determinism`
-- [ ] **REC-01**: User reads `recommend.rs` and finds a new `CellRecommendation` struct (fields: rank, alloc, env, composite_score, axes, tldr, strengths, weaknesses, recommended_for, avoid_for, suspect_flag) plus `top_n_cells() -> Vec<CellRecommendation>` — the existing `recommendations()` and its 13 unit tests are untouched
-- [ ] **REC-02**: User reads `recommend.rs` and finds named constants `TOP_N_SPIDER = 3`, `TOP_N_TABLE = 5`, `TOP_N_TOTAL = 10` — single source of truth shared between Markdown and HTML emitters (no magic numbers in templates)
+- [x] **SCORE-01**: User reads `score.rs` and finds `normalize_axis(values: &[f64], direction: Direction) -> Vec<f64>` mapping each input to `[0.0, 100.0]` with direction-aware inversion — `Higher` keeps order, `Lower` inverts
+- [x] **SCORE-02**: User reads `score.rs` and finds **p10/p90 winsorization** applied before min-max normalization (chosen over p5/p95 because `floor(0.05 × 18) = 0` collapses to raw min/max at N=18; `floor(0.1 × 18) = 1` clips one cell per tail) — guarded by `score::tests::normalize_axis_p10_p90_clips_one_outlier_each_tail_at_n18`
+- [x] **SCORE-03**: User reads `score.rs` and finds `compute_axes(runs, metas, security_metas) -> Vec<CellAxes>` and `score_cells(...) -> Vec<CellScore>` — composite weighted-sum score using equal weights (1/8 per axis, per milestone spec); summation traverses `MEASUREMENT_AXES` constant order (NOT collected into a `Vec` — single-ULP drift from non-deterministic order corrupts ties)
+- [x] **SCORE-04**: User reads `score.rs` and finds `top_n(scores, n) -> Vec<CellScore>` returning the top-N cells with **alphabetical `(alloc, env)` tiebreak** for any cells that tie on composite score — guarded by `score::tests::tied_cells_break_alphabetically_for_determinism`
+- [x] **REC-01**: User reads `recommend.rs` and finds a new `CellRecommendation` struct (fields: rank, alloc, env, composite_score, axes, tldr, strengths, weaknesses, recommended_for, avoid_for, suspect_flag) plus `top_n_cells() -> Vec<CellRecommendation>` — the existing `recommendations()` and its 13 unit tests are untouched
+- [x] **REC-02**: User reads `recommend.rs` and finds named constants `TOP_N_SPIDER = 3`, `TOP_N_TABLE = 5`, `TOP_N_TOTAL = 10` — single source of truth shared between Markdown and HTML emitters (no magic numbers in templates)
 
 ### Per-cell Artifacts
 
-- [ ] **CELL-01**: User reads `templates/recommend-cell.md.tmpl` and `templates/recommend-cell.html.tmpl` and finds two tinytemplate files driven by the **same `CellRecommendation` struct** — Markdown card and HTML panel are field-by-field identical
-- [ ] **CELL-02**: User runs `cargo test` and the test `html::tests::cell_templates_both_reference_all_fields` renders both templates with sentinel values and asserts both outputs contain every sentinel — prevents struct/template drift (the WR-01 pattern)
-- [ ] **CELL-03**: User runs `just aggregate` and the aggregator writes ten Markdown files `report/recommend-{rank:02d}-{alloc}-{env}.md` and ten HTML fragments `report/recommend-{rank:02d}-{alloc}-{env}.html` (rank zero-padded for natural filename sort)
-- [ ] **CELL-04**: User reads `REPORT.md` and finds a new `## Top 10 cells` section with the top-5 recommendation cards above the fold and the remaining 5 inside a collapsible `<details>` block (Cowan's 4±1 working-memory bound)
-- [ ] **CELL-05**: User reads each per-cell artifact and finds the structure: TL;DR (1 sentence) → Strengths → Weaknesses → Recommended-for → Avoid-for, 80–150 words total, **data-derived** (no hand-edited prose strings — the `*(suspect)*` italic suffix from v1.0 is the only allowed annotation)
+- [x] **CELL-01**: User reads `templates/recommend-cell.md.tmpl` and `templates/recommend-cell.html.tmpl` and finds two tinytemplate files driven by the **same `CellRecommendation` struct** — Markdown card and HTML panel are field-by-field identical
+- [x] **CELL-02**: User runs `cargo test` and the test `html::tests::cell_templates_both_reference_all_fields` renders both templates with sentinel values and asserts both outputs contain every sentinel — prevents struct/template drift (the WR-01 pattern)
+- [x] **CELL-03**: User runs `just aggregate` and the aggregator writes ten Markdown files `report/recommend-{rank:02d}-{alloc}-{env}.md` and ten HTML fragments `report/recommend-{rank:02d}-{alloc}-{env}.html` (rank zero-padded for natural filename sort)
+- [x] **CELL-04**: User reads `REPORT.md` and finds a new `## Top 10 cells` section with the top-5 recommendation cards above the fold and the remaining 5 inside a collapsible `<details>` block (Cowan's 4±1 working-memory bound)
+- [x] **CELL-05**: User reads each per-cell artifact and finds the structure: TL;DR (1 sentence) → Strengths → Weaknesses → Recommended-for → Avoid-for, 80–150 words total, **data-derived** (no hand-edited prose strings — the `*(suspect)*` italic suffix from v1.0 is the only allowed annotation)
 
 ### Spider Chart
 
-- [ ] **POLAR-01**: User reads `polar.rs` and finds a top-N spider trace builder emitting `{ r: [...9], theta: [...9], type: 'scatterpolar', fill: 'toself' }` per cell — **9 elements, not 8** (closes the polygon by repeating `r[0]` and `theta[0]`); guarded by `polar::tests::trace_closes_polygon_with_9_elements`
-- [ ] **POLAR-02**: User opens `report/index.html` and finds a new `<div id="chart-spider">` rendering the **top-3 cells above the fold** as a small-multiples grid (one chart per cell), with a matrix-mean reference polygon overlaid at 25% alpha for context
-- [ ] **POLAR-03**: User opens `report/index.html` and finds the spider chart's heuristic axes (image-size efficiency, security posture) visually distinguished — `(heuristic)` suffix on the axis label and dashed gridline (or equivalent Plotly per-axis styling — Phase 4 plan resolves the exact mechanism)
-- [ ] **POLAR-04**: User runs `cargo test` and the test `html::tests::plotly_sri_hash_unchanged` pins the Plotly CDN URL + SRI hash to v2.35.3 — guards against a future contributor "upgrading" Plotly without verifying `scatterpolar` trace shape is unchanged
-- [ ] **POLAR-05**: User opens `report/index.html` and finds the v1.0 Recommendations table extended with a **Pareto-front overlay** column (P2 differentiator — cells on the Pareto front of `composite_score` vs `image_size_mb` carry a marker; defer-friendly if Phase 4 budget tight)
+- [x] **POLAR-01**: User reads `polar.rs` and finds a top-N spider trace builder emitting `{ r: [...9], theta: [...9], type: 'scatterpolar', fill: 'toself' }` per cell — **9 elements, not 8** (closes the polygon by repeating `r[0]` and `theta[0]`); guarded by `polar::tests::trace_closes_polygon_with_9_elements`
+- [x] **POLAR-02**: User opens `report/index.html` and finds a new `<div id="chart-spider">` rendering the **top-3 cells above the fold** as a small-multiples grid (one chart per cell), with a matrix-mean reference polygon overlaid at 25% alpha for context
+- [x] **POLAR-03**: User opens `report/index.html` and finds the spider chart's heuristic axes (image-size efficiency, security posture) visually distinguished — `(heuristic)` suffix on the axis label and dashed gridline (or equivalent Plotly per-axis styling — Phase 4 plan resolves the exact mechanism)
+- [x] **POLAR-04**: User runs `cargo test` and the test `html::tests::plotly_sri_hash_unchanged` pins the Plotly CDN URL + SRI hash to v2.35.3 — guards against a future contributor "upgrading" Plotly without verifying `scatterpolar` trace shape is unchanged
+- [x] **POLAR-05**: User opens `report/index.html` and finds the v1.0 Recommendations table extended with a **Pareto-front overlay** column (P2 differentiator — cells on the Pareto front of `composite_score` vs `image_size_mb` carry a marker; defer-friendly if Phase 4 budget tight)
 
 ### Direction Markers
 
@@ -53,9 +53,9 @@ Requirements for milestone v1.1 (Recommendations, Spider Charts & Direction Mark
 
 - [x] **TEST-01**: User runs `cargo test` and **all v1.0 byte-identical-output golden tests still pass** — every byte that v1.0 emitted is unchanged for inputs that don't include security sidecars (security-axis em-dash fallback applies)
 - [x] **TEST-02**: User reads the v1.1 PR list and finds Phase 6 (golden-fixture regeneration) shipped as **a single standalone PR with no production code** — reviewer can verify the regeneration was intentional; Phase A–E PRs each carry no fixture-byte changes (test fails loudly until Phase 6 lands)
-- [ ] **TEST-03**: User runs `cargo test` and the test `loader::tests::load_security_metas_returns_btreemap_sorted_by_env` asserts the return type is `BTreeMap` (compile-time type check) and iteration is alphabetically sorted by env key
-- [ ] **TEST-04**: User runs `cargo test` and the test `score::tests::composite_score_summation_order_matches_axes_rs_constant_order` asserts that scoring traverses axes in `MEASUREMENT_AXES` order — not via a collected `Vec` or `HashSet`
-- [ ] **TEST-05**: User runs `cargo test` and the test `score::tests::nan_input_does_not_corrupt_score` asserts NaN/inf inputs from `multi_run` raw `Run` data either propagate to a single sentinel score or short-circuit to em-dash — never silently sort to first/last (`partial_cmp` returns `None` for NaN, and pdqsort is not stable)
+- [x] **TEST-03**: User runs `cargo test` and the test `loader::tests::load_security_metas_returns_btreemap_sorted_by_env` asserts the return type is `BTreeMap` (compile-time type check) and iteration is alphabetically sorted by env key
+- [x] **TEST-04**: User runs `cargo test` and the test `score::tests::composite_score_summation_order_matches_axes_rs_constant_order` asserts that scoring traverses axes in `MEASUREMENT_AXES` order — not via a collected `Vec` or `HashSet`
+- [x] **TEST-05**: User runs `cargo test` and the test `score::tests::nan_input_does_not_corrupt_score` asserts NaN/inf inputs from `multi_run` raw `Run` data either propagate to a single sentinel score or short-circuit to em-dash — never silently sort to first/last (`partial_cmp` returns `None` for NaN, and pdqsort is not stable)
 
 ## v1.2 Requirements (deferred)
 
@@ -95,28 +95,28 @@ Coverage: 32/32 v1.1 requirements mapped to exactly one phase. No orphans. Phase
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AXES-01 | Phase 6 | Pending |
-| AXES-02 | Phase 6 | Pending |
-| SEC-01 | Phase 6 | Pending |
-| SEC-02 | Phase 6 | Pending |
-| SEC-03 | Phase 6 | Pending |
-| GUARD-01 | Phase 6 | Pending |
-| SCORE-01 | Phase 7 | Pending |
-| SCORE-02 | Phase 7 | Pending |
-| SCORE-03 | Phase 7 | Pending |
-| SCORE-04 | Phase 7 | Pending |
-| REC-01 | Phase 7 | Pending |
-| REC-02 | Phase 7 | Pending |
-| CELL-01 | Phase 8 | Pending |
-| CELL-02 | Phase 8 | Pending |
-| CELL-03 | Phase 8 | Pending |
-| CELL-04 | Phase 8 | Pending |
-| CELL-05 | Phase 8 | Pending |
-| POLAR-01 | Phase 9 | Pending |
-| POLAR-02 | Phase 9 | Pending |
-| POLAR-03 | Phase 9 | Pending |
-| POLAR-04 | Phase 9 | Pending |
-| POLAR-05 | Phase 9 | Pending |
+| AXES-01 | Phase 6 | Complete |
+| AXES-02 | Phase 6 | Complete |
+| SEC-01 | Phase 6 | Complete |
+| SEC-02 | Phase 6 | Complete |
+| SEC-03 | Phase 6 | Complete |
+| GUARD-01 | Phase 6 | Complete |
+| SCORE-01 | Phase 7 | Complete |
+| SCORE-02 | Phase 7 | Complete |
+| SCORE-03 | Phase 7 | Complete |
+| SCORE-04 | Phase 7 | Complete |
+| REC-01 | Phase 7 | Complete |
+| REC-02 | Phase 7 | Complete |
+| CELL-01 | Phase 8 | Complete |
+| CELL-02 | Phase 8 | Complete |
+| CELL-03 | Phase 8 | Complete |
+| CELL-04 | Phase 8 | Complete |
+| CELL-05 | Phase 8 | Complete |
+| POLAR-01 | Phase 9 | Complete |
+| POLAR-02 | Phase 9 | Complete |
+| POLAR-03 | Phase 9 | Complete |
+| POLAR-04 | Phase 9 | Complete |
+| POLAR-05 | Phase 9 | Complete |
 | DIR-01 | Phase 10 | Complete |
 | DIR-02 | Phase 10 | Complete |
 | DIR-03 | Phase 10 | Complete |
@@ -124,9 +124,9 @@ Coverage: 32/32 v1.1 requirements mapped to exactly one phase. No orphans. Phase
 | DIR-05 | Phase 10 | Complete |
 | TEST-01 | Phase 11 | Complete |
 | TEST-02 | Phase 11 | Complete |
-| TEST-03 | Phase 7 | Pending |
-| TEST-04 | Phase 7 | Pending |
-| TEST-05 | Phase 7 | Pending |
+| TEST-03 | Phase 7 | Complete |
+| TEST-04 | Phase 7 | Complete |
+| TEST-05 | Phase 7 | Complete |
 
 ### Coverage by Phase
 
@@ -144,4 +144,4 @@ Coverage: 32/32 v1.1 requirements mapped to exactly one phase. No orphans. Phase
 
 ---
 *Requirements defined: 2026-05-26*
-*Last updated: 2026-05-26 after milestone v1.1 scoping*
+*Last updated: 2026-05-30 — v1.1 milestone close (32/32 requirements complete; tech-debt items deferred to v1.2 per audit)*
