@@ -14,7 +14,7 @@ Phase numbering continues from v1.0 (last phase = 5; surgical patch = 5.1) → v
 - [x] **Phase 7: Scoring & Top-N** — Direction-aware normalization, composite scoring, recommendation struct
 - [x] **Phase 8: Per-cell Artifacts** — Markdown + HTML cards via two templates with sync sentinel
 - [x] **Phase 9: Spider Chart** — `polar.rs` scatterpolar trace builder + chart wiring + Pareto overlay
-- [ ] **Phase 10: Direction Markers** — Column headers + axis labels + legend + a11y
+- [x] **Phase 10: Direction Markers** — Column headers + axis labels + legend + a11y
 - [ ] **Phase 11: Golden-fixture Regen** — Standalone PR; byte-identical pinning
 
 ## v1.1 Phase Details
