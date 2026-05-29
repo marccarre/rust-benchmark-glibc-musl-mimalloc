@@ -51,8 +51,8 @@ Requirements for milestone v1.1 (Recommendations, Spider Charts & Direction Mark
 
 ### Test & Golden-fixture Discipline
 
-- [ ] **TEST-01**: User runs `cargo test` and **all v1.0 byte-identical-output golden tests still pass** — every byte that v1.0 emitted is unchanged for inputs that don't include security sidecars (security-axis em-dash fallback applies)
-- [ ] **TEST-02**: User reads the v1.1 PR list and finds Phase 6 (golden-fixture regeneration) shipped as **a single standalone PR with no production code** — reviewer can verify the regeneration was intentional; Phase A–E PRs each carry no fixture-byte changes (test fails loudly until Phase 6 lands)
+- [x] **TEST-01**: User runs `cargo test` and **all v1.0 byte-identical-output golden tests still pass** — every byte that v1.0 emitted is unchanged for inputs that don't include security sidecars (security-axis em-dash fallback applies)
+- [x] **TEST-02**: User reads the v1.1 PR list and finds Phase 6 (golden-fixture regeneration) shipped as **a single standalone PR with no production code** — reviewer can verify the regeneration was intentional; Phase A–E PRs each carry no fixture-byte changes (test fails loudly until Phase 6 lands)
 - [ ] **TEST-03**: User runs `cargo test` and the test `loader::tests::load_security_metas_returns_btreemap_sorted_by_env` asserts the return type is `BTreeMap` (compile-time type check) and iteration is alphabetically sorted by env key
 - [ ] **TEST-04**: User runs `cargo test` and the test `score::tests::composite_score_summation_order_matches_axes_rs_constant_order` asserts that scoring traverses axes in `MEASUREMENT_AXES` order — not via a collected `Vec` or `HashSet`
 - [ ] **TEST-05**: User runs `cargo test` and the test `score::tests::nan_input_does_not_corrupt_score` asserts NaN/inf inputs from `multi_run` raw `Run` data either propagate to a single sentinel score or short-circuit to em-dash — never silently sort to first/last (`partial_cmp` returns `None` for NaN, and pdqsort is not stable)
@@ -122,8 +122,8 @@ Coverage: 32/32 v1.1 requirements mapped to exactly one phase. No orphans. Phase
 | DIR-03 | Phase 10 | Complete |
 | DIR-04 | Phase 10 | Complete |
 | DIR-05 | Phase 10 | Complete |
-| TEST-01 | Phase 11 | Pending |
-| TEST-02 | Phase 11 | Pending |
+| TEST-01 | Phase 11 | Complete |
+| TEST-02 | Phase 11 | Complete |
 | TEST-03 | Phase 7 | Pending |
 | TEST-04 | Phase 7 | Pending |
 | TEST-05 | Phase 7 | Pending |

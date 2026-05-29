@@ -4,14 +4,14 @@ milestone: v1.1
 milestone_name: Phases
 status: ready_to_plan
 stopped_at: Phase 10 complete (2/2) — ready to discuss Phase 11
-last_updated: 2026-05-28T22:35:01.412Z
-last_activity: 2026-05-28
+last_updated: 2026-05-29T19:17:47.000Z
+last_activity: 2026-05-29
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 13
-  completed_plans: 13
-  percent: 71
+  completed_plans: 14
+  percent: 85
 ---
 
 # Project State
@@ -99,6 +99,7 @@ Recent decisions affecting current work:
 - [Phase ?]: Phase 10 Plan 02: 4 HtmlContext fields carry aria-wrapped axis titles + plain-glyph JSON header array; html.rs consumes column_header_with_arrow from axes.rs (same SSoT helper as markdown.rs Plan 10-01); cross-surface drift defended by aria_labels_wrap_direction_marker_glyphs test.
 - [Phase ?]: Phase 10 Plan 02: tinytemplate '| unescaped' filter required on all 4 axis-label placeholders — default formatter HTML-escapes <span> brackets to &lt;span&gt;, breaking aria-wrap rendering (Rule 3 auto-fix during Task 2 verification).
 - [Phase ?]: Phase 10 Plan 02: A/B comparison chart (line 742) intentionally preserved without arrow per CONTEXT D-claude-discretion-2 / UI-SPEC §Copywriting Contract — single ↑/↓ cannot represent bidirectional '% delta (B vs A)' semantics where positive=B-faster, negative=B-slower.
+- [Phase 11]: v1.1 release gate held: byte-identical contract preserved across Phases 6-10.
 
 ### Pending Todos
 
