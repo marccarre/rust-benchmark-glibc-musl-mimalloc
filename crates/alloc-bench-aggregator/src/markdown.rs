@@ -279,9 +279,9 @@ fn central_tendency(samples: Option<&Vec<f64>>) -> f64 {
 /// Format a single throughput cell with multi-run decoration:
 ///   "100 (95..110, CV 5%)"
 /// or with high-variance flag (CV > 10%):
-///   "100 (90..130, CV 19% ⚠ high variance)"
+///   "100 (90..130, CV 15% ⚠ high variance)"
 /// or both flags concatenated (per CONTEXT.md `<specifics>` ¶5):
-///   "100 (90..130, CV 19% ⚠ high variance ⚠ suspect)"
+///   "100 (90..130, CV 15% ⚠ high variance ⚠ suspect)"
 /// or with undefined CV (mean ≈ 0):
 ///   "0 (0..0, CV —)"
 ///
