@@ -202,4 +202,4 @@ Plans:
 | 8. Per-cell Artifacts | v1.1 | 0/2 | Not started | - |
 | 9. Spider Chart | v1.1 | 0/? | Not started | - |
 | 10. Direction Markers | v1.1 | 2/2 | Complete    | 2026-05-28 |
-| 11. Golden-fixture Regen | v1.1 | 1/1 | Complete   | 2026-05-29 |
+| 11. Golden-fixture Regen | v1.1 | 1/1 | Complete    | 2026-05-29 |
