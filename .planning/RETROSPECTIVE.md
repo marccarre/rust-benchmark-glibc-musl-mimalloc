@@ -58,6 +58,62 @@
 
 ---
 
+## Milestone: v1.1 — Recommendations, Spider Charts & Direction Markers
+
+**Shipped:** 2026-05-30
+**Phases:** 6 (Phases 6-11) | **Plans:** 14 | **Tasks:** 27
+**Audit:** tech_debt — 32/32 requirements satisfied; 2 documented debt items deferred to v1.2
+
+### What Was Built
+
+- **Axes registry as SSoT** — `MEASUREMENT_AXES: [AxisSpec; 8]` + `Direction::{Higher, Lower}` enum + `arrow()` + `column_header_with_arrow()` in `axes.rs`, consumed by `score.rs`, `polar.rs`, `markdown.rs`, `html.rs`. One change point for axis order, direction, and column-header decoration.
+- **Direction-aware composite scoring** — `score.rs` with p10/p90 winsorization (chosen over p5/p95 because `floor(0.05 × 18) = 0` collapses to raw min/max at N=18), equal-weight sum via `MEASUREMENT_AXES.iter()` constant traversal, alphabetical `(alloc, env)` tiebreak, and NaN-poisoning guards.
+- **Per-cell recommendation artifacts** — `CellRecommendation` struct + two tinytemplate files (`recommend-cell.md.tmpl` + `recommend-cell.html.tmpl`) driven by the same struct. Markdown card and HTML panel field-by-field identical; drift caught at compile time via `cell_templates_both_reference_all_fields` sentinel test (the WR-01 pattern from v1.0).
+- **Spider chart with Pareto-front overlay** — `polar.rs` server-side `scatterpolar` trace builder (9-element polygon-closure invariant), top-3 cells above-fold as small-multiples grid, matrix-mean reference polygon at 25% alpha, `(heuristic)` axis-suffix + #666 tickfont distinguishing heuristic axes, `pareto_front` + `★` glyph overlay, `PLOTLY_SRI_HASH` constant pinning Plotly to v2.35.3.
+- **Direction markers across both surfaces** — ↑/↓ glyphs in every measurement column header (REPORT.md) and chart axis label (`index.html`), drawn from a single SSoT helper. `<span aria-label="…">` aria-wrapping for WCAG 2.1 SC 1.3.3 conformance via server-side template + JS post-render pass. Verbatim legend `↑ higher is better · ↓ lower is better · ⚠ suspect run` above every per-scenario table. Cells unchanged from v1.0 byte-stable formatting.
+- **Security sidecar plumbing** — `BTreeMap<String, SecurityMeta>` for byte-identical iteration, em-dash fallback when `--security` absent, six hand-curated `meta/security/{env}.json` sidecars (alpine/debian-slim/distroless-cc/distroless-static/scratch/wolfi).
+- **Frozen-schema CI gate** — `v1_schema_output_rs_is_frozen` integration test pinning a SHA-256 of `crates/alloc-bench-core/src/output.rs` to its v1.0 freeze. Codifies the decorate-not-rewrite convention at the test boundary, not just in CLAUDE.md prose.
+- **Standalone golden-fixture-regen PR convention** — Phase 11 codified the rule in CLAUDE.md §Conventions: byte-changing surface additions ship in a separate PR carrying only fixture/snapshot regen + verification metadata. Phases 6-10 each carry no fixture-byte changes (golden tests fail loudly until Phase 11 lands), so reviewer can verify the regen was intentional.
+
+### What Worked
+
+- **Strictly-serial phase order** (6 blocks 7+9+10; 7 blocks 8+9; 10 blocks 11) preserved byte-identical-output discipline through every phase. The Phase 11 release gate cleanly captured a single regen point rather than a long chain of fixture churn.
+- **Two-template-one-struct pattern (Phase 8)** caught drift at compile time. The `cell_templates_both_reference_all_fields` test rendered both templates with sentinel values and asserted both outputs contain every sentinel — the WR-01 pattern from v1.0 directly applied.
+- **Cross-surface SSoT helpers (Phase 10)** — `column_header_with_arrow` lives in `axes.rs` and is consumed by both `markdown.rs` and `html.rs`. Tests defend against drift; no hard-coded labels in `index.html.tmpl`.
+- **Phase 9 UI BLOCKER closed by Plan 09-04 inline** — when the UI review surfaced a blocker after 09-03, the workflow inserted a 4th plan rather than punting to v1.2. The phase shipped clean with all 5 must-haves green.
+- **Audit-before-close caught Phase 7's missing VERIFICATION.md** as a documentation gap (not a code gap) — `gsd-audit-milestone` cross-checked 4 sources (REQUIREMENTS.md, SUMMARY.md frontmatter, code-level integration check, full test pass) before emitting `tech_debt` rather than `gaps_found`. Saved a backfill round.
+
+### What Was Inefficient
+
+- **Three context-pause rounds** — v1.1 close paused at 77% (round 1), 66% (round 2), 66% (round 3) before completing in round 4. Each round committed a HANDOFF.json + pause-commit. The complete-milestone workflow's heaviest single edit (PROJECT.md evolution review, ~150 LOC) plus retrospective append plus archive moves consistently exceeded the 33% remaining budget after pre-close checks. **Lesson:** for future milestones, start `/gsd:complete-milestone` from a fresh `/clear` rather than continuing from prior phase work.
+- **SDK milestone.complete accomplishment extraction** pulled raw SUMMARY.md one-liners verbatim, including 3 placeholders ("One-liner:") and one agent-noise bullet ("Rule 3 - Format mismatch") and one literal "None.". Required manual rewrite in MILESTONES.md to produce a clean per-phase summary. **Lesson:** the SDK extracts mechanically; the human/AI close-er should plan to rewrite the v1.1 entry inline.
+- **REQUIREMENTS.md checkboxes drift from VERIFICATION.md status** — at audit time, only 7 of 32 boxes were `[x]`. The audit surfaced this as a documented post-close action, but the gap meant the audit had to cross-reference 4 sources rather than trusting the traceability table. Round 3 of the close flipped the remaining 25 boxes inline.
+- **Phase 10 needed two REVIEW iterations** (10-REVIEW.md + 10-REVIEW.iter2.md, plus matching FIX docs). The first review surfaced the tinytemplate `| unescaped` filter requirement (default formatter HTML-escapes `<span>` brackets, breaking aria-wrap rendering), which became Plan 10-02 Task 2 auto-fix.
+
+### Patterns Established
+
+- **Cross-surface SSoT helpers in `axes.rs`** — direction glyphs, column-header decoration, axis-label decoration all flow from one module. New byte-identical-output surfaces in v1.2+ should default to this pattern.
+- **Two-template-one-struct + sentinel sync test** — for any new artifact pair (e.g., Markdown + HTML), drive both from the same struct and add a `templates_both_reference_all_fields` style sentinel test. Drift caught at compile time, not at integration time.
+- **Standalone golden-fixture-regen PR** — codified in CLAUDE.md §Conventions; inherits to v1.2 spider-chart additions, v2 allocator-matrix expansion. Reviewer-visible discipline beats hidden golden updates.
+- **Frozen-schema SHA-256 test** — cheaper than a runtime invariant; catches accidental schema mutation at test time. Pattern reusable for any "this file is the contract" boundary (output.rs, locked APIs, fixture files).
+- **Post-audit checkbox reconciliation** is a documented step, not a manual chore. The audit's "REQUIREMENTS.md checkbox state" line is the close action.
+
+### Key Lessons
+
+1. **`/gsd:complete-milestone` deserves a fresh context window.** Three rounds × ~30K tokens each ≈ 90K tokens consumed by pause-and-resume overhead alone. The workflow has 8 file edits (MILESTONES.md, ROADMAP.md, PROJECT.md, STATE.md, RETROSPECTIVE.md, plus 3 archive creates) plus phase-directory moves and git operations — heavier than a typical phase close.
+2. **Tech debt is not a gap.** The audit's distinction between `gaps_found` (blocks close) and `tech_debt` (proceeds with documented deferral) preserved velocity without losing visibility. Phase 7's missing VERIFICATION.md and the `env_short_name` duplication both proceeded as v1.2 candidates with explicit deferral records in STATE.md.
+3. **Decorate-not-rewrite scales.** v1.1 added 32 requirements without touching `crates/alloc-bench-core/src/output.rs`. The decorate-not-rewrite pattern (sidecars + aggregator decoration at emit time) held for the entire milestone. The frozen-schema test made it self-policing.
+4. **Standalone-PR convention pays off twice** — once at review time (intentional regen, easy to verify) and once at audit time (the v1.0 byte-identical surface is preserved as a separate commit point, so any v1.1 byte change is attributable to a specific phase).
+5. **Plan 09-04 (UI BLOCKER inline closure) > defer to v1.2.** Phase 9 originally spec'd 3 plans; UI review surfaced a blocker after 09-03; Plan 09-04 closed it inline rather than rolling to v1.2. The milestone shipped clean and the convention "if UI review blocks, insert a plan" is now muscle memory.
+
+### Cost Observations
+
+- Model mix: ~85% Opus 4.7 (planner, executor, researcher, milestone-close orchestration), ~15% Sonnet 4.6 (plan-checker, verifier, audit integration check)
+- Sessions: 4 rounds for milestone close + many sessions for execution; total ~6 weeks wall-clock from 2026-05-26 to 2026-05-30
+- Notable: Phase 10 needed iteration 2 of code review (tinytemplate `| unescaped` filter requirement) — caught and auto-fixed during Task 2 verification rather than in production. Phase 9's UI BLOCKER was caught and closed inline (Plan 09-04) rather than punted.
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -65,13 +121,19 @@
 | Milestone | Sessions | Phases | Key Change |
 |-----------|----------|--------|------------|
 | v1.0 | 1 long autonomous run | 5 | First milestone — established the GSD-driven autonomous-mode workflow with smart-discuss + research + pattern-mapper + planner + plan-checker + executor + verifier + code-reviewer chain |
+| v1.1 | Multiple short sessions + 4 milestone-close rounds | 6 | Established the audit-before-close gate (`gsd-audit-milestone`), the standalone-fixture-regen PR convention, the cross-surface SSoT helper pattern (`column_header_with_arrow` in `axes.rs`), and the frozen-schema SHA-256 test as a self-policing decorate-not-rewrite contract |
 
 ### Cumulative Quality
 
 | Milestone | Tests | Coverage | Zero-Dep Additions |
 |-----------|-------|----------|-------------------|
 | v1.0 | 81 unit + 23 smoke = 104 tests | All 49 v1 reqs functionally covered (38 marked Complete in REQUIREMENTS.md, 11 stale-checkbox via Phase 5 CI transitive coverage) | `multi_run.rs` is pure-stdlib (no statrs/nalgebra); `glob` 0.3 + `tinytemplate` 1.x are the only NEW deps in Phases 4-5 |
+| v1.1 | 256 tests passing (workspace) | 32/32 v1.1 reqs satisfied (audit `tech_debt`: 1 missing VERIFICATION.md doc + 1 cross-file code-duplication acknowledged for v1.2) | `sha2` added as dev-dep only (frozen-schema test); `axes.rs`, `score.rs`, `polar.rs`, `recommend-cell.{md,html}.tmpl` all pure-stdlib + tinytemplate; no new runtime deps |
 
 ### Top Lessons (Verified Across Milestones)
 
-1. *(To be cross-validated by v1.1+)*
+1. **Decorate-not-rewrite holds at scale.** v1.0 locked the v1 schema; v1.1 added 32 requirements without touching it. Sidecars + aggregator decoration + frozen-schema SHA-256 test = self-policing discipline.
+2. **Two-template-one-struct + sentinel sync test catches drift at compile time.** v1.0 introduced the WR-01 pattern (winner tiebreak); v1.1 reapplied it to per-cell artifacts (Markdown + HTML cards from `CellRecommendation`).
+3. **Audit-before-close distinguishes gap from debt.** v1.1's `tech_debt` audit verdict proceeded with documented deferral; a `gaps_found` verdict would have inserted closure phases. The distinction preserves velocity without losing visibility.
+4. **Cross-surface SSoT helpers prevent drift.** v1.0 used `BTreeMap` over `HashMap` for iteration determinism; v1.1 added `column_header_with_arrow` SSoT in `axes.rs` consumed by both Markdown and HTML emitters. Pattern: one module owns the contract; tests defend the boundary.
+5. **`/gsd:complete-milestone` deserves a fresh context.** v1.0 closed in one session; v1.1 needed 4 rounds. The workflow's heaviest single step (PROJECT.md evolution review) plus retrospective + archive moves consistently exceeded 33% remaining budget. Future milestones should start the close from `/clear`.
