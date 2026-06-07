@@ -545,7 +545,8 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
 ///     the matrix-mean reference polygon FIRST (renders BEHIND the
 ///     cell polygon per CONTEXT.md "Layout & Plotly Configuration"),
 ///     followed by that single cell's polygon.
-///   - a `layout_json` carrying `title.text = "{alloc}/{env}"` +
+///   - a `layout_json` carrying `title.text = "#N  {alloc}/{env}"`
+///     (rank-prefixed; two spaces between `#N` and the identifier) +
 ///     `font: { size: 14, color: "#1F2328" }` per UI-SPEC §"Per-chart
 ///     Plotly layout".
 ///
@@ -558,7 +559,7 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
 ///
 /// The reference polygon is computed ONCE against the full `cell_scores`
 /// slice (so the matrix mean reflects the full population, not the
-/// top-3) and re-serialized into each per-cell trace pair. The legend
+/// top-4) and re-serialized into each per-cell trace pair. The legend
 /// name `"Matrix mean (n=N)"` interpolates `cell_scores.len()` so it
 /// stays truthful for partial inputs (POLAR-04 / WR-01).
 ///
@@ -567,9 +568,9 @@ fn build_context(runs: &[Run]) -> Result<BuiltContext> {
 /// entirely on that path; this fn is still called but the vec goes
 /// unused.
 fn build_spider_context(cell_scores: &[CellScore]) -> Result<SpiderContext> {
-    // Take the first TOP_N_SPIDER (=3) cells. `recommend::top_n_cells`
+    // Take the first TOP_N_SPIDER (=4) cells. `recommend::top_n_cells`
     // already truncates and sorts cell_scores by composite score, so
-    // the slice [..TOP_N_SPIDER] gives the top-3 in rank order.
+    // the slice [..TOP_N_SPIDER] gives the top-4 in rank order.
     let head = if cell_scores.len() <= TOP_N_SPIDER {
         cell_scores
     } else {
@@ -588,7 +589,7 @@ fn build_spider_context(cell_scores: &[CellScore]) -> Result<SpiderContext> {
         .collect();
 
     // Reference polygon is computed ONCE against the full cell_scores
-    // slice (not the top-3 head) so the matrix mean reflects the full
+    // slice (not the top-4 head) so the matrix mean reflects the full
     // population. Per-cell pairs serialize a (reference, cell) tuple.
     let reference_trace = polar::build_reference_trace(cell_scores);
 
@@ -626,7 +627,7 @@ fn build_spider_context(cell_scores: &[CellScore]) -> Result<SpiderContext> {
             "paper_bgcolor": "#ffffff",
             "plot_bgcolor": "#ffffff",
             "title": {
-                "text": format!("{}/{}", score.alloc, score.env),
+                "text": format!("#{}  {}/{}", idx + 1, score.alloc, score.env),
                 "font": { "size": 14, "color": "#1F2328" }
             }
         });
@@ -1464,7 +1465,7 @@ mod tests {
     //
     // Tests gate the `<section class="spider-chart">` block + Plotly
     // bootstrap. The render fn now takes `cell_scores: &[CellScore]`
-    // (3rd arg) so the spider section consumes the top-3 by
+    // (3rd arg) so the spider section consumes the top-4 by
     // `cell_scores[..TOP_N_SPIDER]` plus a matrix-mean reference trace.
     //
     // Test surface:
@@ -1559,11 +1560,11 @@ mod tests {
             "missing spider section in:\n{html}"
         );
         assert!(
-            html.contains("<h2>Top-3 Above the Fold</h2>"),
+            html.contains("<h2>Top-4 Above the Fold</h2>"),
             "missing verbatim spider section heading in:\n{html}"
         );
         assert!(
-            html.contains("Spider charts of the top-3 cells across 8 normalized axes (0-1). Grey reference polygon = mean across all 18 cells."),
+            html.contains("Spider charts of the top-4 cells across 8 normalized axes (0-1). Grey reference polygon = mean across all 18 cells."),
             "missing verbatim spider section caption in:\n{html}"
         );
         assert!(
@@ -1593,7 +1594,7 @@ mod tests {
             "expected NO chart-spider div for empty top_n, got:\n{html}"
         );
         assert!(
-            !html.contains("<h2>Top-3 Above the Fold</h2>"),
+            !html.contains("<h2>Top-4 Above the Fold</h2>"),
             "expected NO spider heading for empty top_n, got:\n{html}"
         );
     }

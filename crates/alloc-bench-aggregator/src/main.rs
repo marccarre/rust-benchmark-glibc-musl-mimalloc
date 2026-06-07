@@ -152,7 +152,7 @@ fn main() -> Result<()> {
     // passed to `html::write` so `polar::build_trace` / `build_reference_trace`
     // can build the scatterpolar JSON. `top_n_cells` truncates internally
     // (TOP_N_TOTAL = 10) so passing the full vec is correct; the spider
-    // builder takes the first TOP_N_SPIDER (=3) cells in rank order.
+    // builder takes the first TOP_N_SPIDER (=4) cells in rank order.
     let scores_for_spider: Vec<score::CellScore> = cell_scores.clone();
     let top_n = recommend::top_n_cells(cell_scores, &outcome.runs, &image_sizes);
 

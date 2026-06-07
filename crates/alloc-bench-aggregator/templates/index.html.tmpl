@@ -221,14 +221,15 @@ section.diff-picker label \{
   font-style: italic;
   margin-left: var(--space-xs);
 }
-/* Phase 9 / Plan 09-04 (UI-REVIEW BLOCKER fix): Top-3 Above the Fold
-   spider chart small-multiples grid. Mirrors `.report-mirror` framing
-   on the outer section (same border/radius/spacing) for visual rhythm.
-   `.spider-grid` is a flex container so the three `.spider-cell` divs
-   sit side-by-side at desktop widths (3-column row); each cell is
-   square via `aspect-ratio: 1 / 1` and reuses the `.chart-card`-style
-   border framing. Mobile `@media` override below stacks them vertically
-   (single column) at viewports under 768px. */
+/* Phase 9 / Plan 09-04 (UI-REVIEW BLOCKER fix), promoted to top-4 by
+   quick-260607-swo: Top-4 Above the Fold spider chart small-multiples
+   grid. Mirrors `.report-mirror` framing on the outer section (same
+   border/radius/spacing) for visual rhythm. `.spider-grid` is a CSS
+   grid with two columns at desktop widths so the four `.spider-cell`
+   divs sit in a 2x2 layout; each cell is square via `aspect-ratio:
+   1 / 1` and reuses the `.chart-card`-style border framing. Mobile
+   `@media` override below collapses to a single column at viewports
+   under 768px. */
 .spider-chart \{
   grid-column: 2 / -1;
   margin: var(--space-2xl) var(--space-lg) var(--space-xl);
@@ -247,8 +248,8 @@ section.diff-picker label \{
   margin: 0 0 var(--space-md) 0;
 }
 .spider-grid \{
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--space-md);
 }
 .spider-cell \{
@@ -256,9 +257,13 @@ section.diff-picker label \{
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: var(--space-md);
-  flex: 1 1 calc((100% - 2 * var(--space-md)) / 3);
   aspect-ratio: 1 / 1;
   min-width: 280px;
+}
+@media (max-width: 768px) \{
+  .spider-grid \{
+    grid-template-columns: 1fr;
+  }
 }
 </style>
 </head>
@@ -312,13 +317,13 @@ section.diff-picker label \{
     </details>
   </section>
 {{ endif }}{{ if has_spider }}  <section class="spider-chart">
-    <h2>Top-3 Above the Fold</h2>
-    <p>Spider charts of the top-3 cells across 8 normalized axes (0-1). Grey reference polygon = mean across all 18 cells.</p>
+    <h2>Top-4 Above the Fold</h2>
+    <p>Spider charts of the top-4 cells across 8 normalized axes (0-1). Grey reference polygon = mean across all 18 cells.</p>
     <div id="chart-spider" class="spider-grid">
 {{ for cell in spider_cells }}      <div class="spider-cell" id="spider-cell-{cell.index}"></div>
 {{ endfor }}    </div>
     <script>
-      // Phase 9 / Plan 09-04 (UI-REVIEW BLOCKER fix) — three independent
+      // Phase 9 / Plan 09-04 (UI-REVIEW BLOCKER fix) — four independent
       // Plotly.react calls, one per `.spider-cell` div. Each cell receives
       // a 2-trace array (reference polygon FIRST, cell polygon SECOND)
       // plus a per-cell layout JSON carrying `title.text = "\{alloc}/\{env}"`
