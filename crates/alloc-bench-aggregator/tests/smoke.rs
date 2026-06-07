@@ -802,30 +802,30 @@ fn plotly_sri_hash_unchanged_full_string() {
     );
 }
 
-/// Phase 9 / Plan 09-04 (UI-REVIEW BLOCKER fix) — end-to-end smoke
-/// confirmation that the rendered `index.html` against the committed
-/// fixtures carries EXACTLY THREE `<div class="spider-cell">` children
-/// inside the outer `<div id="chart-spider" class="spider-grid">`
-/// wrapper. Companion to the unit test
-/// `html::tests::spider_section_emits_three_spider_cell_divs` — pins
-/// the small-multiples grid contract through the full
+/// Phase 9 / Plan 09-04 (UI-REVIEW BLOCKER fix), promoted to top-4 by
+/// quick-260607-swo — end-to-end smoke confirmation that the rendered
+/// `index.html` against the committed fixtures carries EXACTLY FOUR
+/// `<div class="spider-cell">` children inside the outer
+/// `<div id="chart-spider" class="spider-grid">` wrapper. Companion to
+/// the unit test `html::tests::spider_section_emits_three_spider_cell_divs`
+/// — pins the small-multiples grid contract through the full
 /// `cargo bin alloc-bench-aggregator` execution path (load → score →
 /// recommend → render → write).
 ///
-/// The committed fixtures have 5 runs across 3 (alloc, env) cells, all
+/// The committed fixtures have 7 runs across 4 (alloc, env) cells, all
 /// of which produce non-empty score axes (top_n is non-empty), so the
-/// `{{ if has_spider }}` gate fires and the loop emits 3 cell divs.
+/// `{{ if has_spider }}` gate fires and the loop emits 4 cell divs.
 #[test]
-fn three_spider_cells_present_when_data_exists() {
+fn four_spider_cells_present_when_data_exists() {
     let (_dir, html) = run_aggregator_against_fixtures();
     let cell_count = html.matches(r#"class="spider-cell""#).count();
     assert_eq!(
-        cell_count, 3,
-        "expected exactly 3 `class=\"spider-cell\"` divs in rendered index.html, \
+        cell_count, 4,
+        "expected exactly 4 `class=\"spider-cell\"` divs in rendered index.html, \
          got {cell_count} — small-multiples grid contract broken (UI-REVIEW BLOCKER)"
     );
-    // Per-cell stable ids `spider-cell-1`, `-2`, `-3`.
-    for n in 1..=3usize {
+    // Per-cell stable ids `spider-cell-1`, `-2`, `-3`, `-4`.
+    for n in 1..=4usize {
         let needle = format!(r#"id="spider-cell-{n}""#);
         assert!(
             html.contains(&needle),
@@ -838,8 +838,8 @@ fn three_spider_cells_present_when_data_exists() {
         "missing OUTER `chart-spider` grid wrapper — \
          `spider_div_present_when_data_exists` would also break"
     );
-    // Three independent `Plotly.react` calls keyed on `spider-cell-N`.
-    for n in 1..=3usize {
+    // Four independent `Plotly.react` calls keyed on `spider-cell-N`.
+    for n in 1..=4usize {
         let needle = format!("Plotly.react('spider-cell-{n}'");
         assert!(
             html.contains(&needle),
