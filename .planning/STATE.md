@@ -5,7 +5,7 @@ milestone_name: Recommendations, Spider Charts & Direction Markers
 status: milestone_complete
 stopped_at: null
 last_updated: "2026-05-30T07:00:00Z"
-last_activity: 2026-05-30 — Milestone v1.1 closed (archived + tagged)
+last_activity: 2026-06-07 — Completed quick task 260607-swo: Top-4 spider grid with rank labels
 progress:
   total_phases: 6
   completed_phases: 6
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-30 after v1.1 milestone)
 Phase: Milestone v1.1 complete (Phases 6-11 archived to `.planning/milestones/v1.1-phases/`)
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-05-30 — Milestone v1.1 closed (archived + tagged)
+Last activity: 2026-06-07 — Completed quick task 260607-swo: Top-4 spider grid with rank labels
 
 ## Performance Metrics
 
@@ -98,6 +98,7 @@ None yet.
 | 260523-lxp | Latest-versions sweep: rustc 1.91→1.95, MSRV collapsed, alpine 3.20→3.23, wolfi SHA refreshed; rand/reqwest major bumps rejected | 2026-05-23 | e668b8d | [260523-lxp-ensure-we-use-the-latest-version-of-each](./quick/260523-lxp-ensure-we-use-the-latest-version-of-each/) |
 | 260524-3hd | Add `just clean-all` (docker images + results/report/meta + cargo target) and `just build-all` (18 cells + host binary) | 2026-05-24 | 7f48e0d | [260524-3hd-add-a-just-clean-all-to-clean-everything](./quick/260524-3hd-add-a-just-clean-all-to-clean-everything/) |
 | 260524-5nc | Fix bench-all warmup/duration wiring (run-all CLI hardcoded 1s/5s) + lower is_suspect samples threshold from 10_000 to 1_000 | 2026-05-24 | bb360e8 | [260524-5nc-fix-bench-all-warmup-duration-wiring-low](./quick/260524-5nc-fix-bench-all-warmup-duration-wiring-low/) |
+| 260607-swo | Promote "Top-3 Above the Fold" spider section to top-4 with #1/#2/#3/#4 rank labels and 2×2 CSS grid layout | 2026-06-07 | 814be5e | [260607-swo-top-3-above-the-fold-top-4-with-rank-lab](./quick/260607-swo-top-3-above-the-fold-top-4-with-rank-lab/) |
 
 ## Deferred Items
 
