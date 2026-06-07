@@ -35,11 +35,11 @@ use crate::score::CellScore;
 // numbers in templates.
 // ----------------------------------------------------------------------
 
-/// Top-3 cells overlaid on the Phase 9 spider chart (small-multiples
+/// Top-4 cells overlaid on the Phase 9 spider chart (small-multiples
 /// grid above the fold). Phase 9 polar.rs uses
 /// `score::top_n(scores, TOP_N_SPIDER)` to skip prose computation on
 /// the chart hot path.
-pub const TOP_N_SPIDER: usize = 3;
+pub const TOP_N_SPIDER: usize = 4;
 
 /// Top-5 cells in the above-the-fold REPORT.md table (Phase 8).
 pub const TOP_N_TABLE: usize = 5;
@@ -993,11 +993,11 @@ mod tests {
     // ------------------------------------------------------------------
 
     /// REC-02: the three top-N constants are pinned to the locked values
-    /// `3 / 5 / 10` (Phase 9 polar.rs spider; Phase 8 above-the-fold table;
+    /// `4 / 5 / 10` (Phase 9 polar.rs spider; Phase 8 above-the-fold table;
     /// Phase 8 total cards/fragments). Any drift breaks downstream consumers.
     #[test]
     fn top_n_constants_match_locked_values() {
-        assert_eq!(TOP_N_SPIDER, 3);
+        assert_eq!(TOP_N_SPIDER, 4);
         assert_eq!(TOP_N_TABLE, 5);
         assert_eq!(TOP_N_TOTAL, 10);
     }
